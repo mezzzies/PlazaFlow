@@ -47,10 +47,12 @@ var placed_facilities: Dictionary = {} # Vector2i -> StallController
 var trash_nodes: Dictionary = {} # Vector2i -> Array[Node3D]
 var ambient_cars: Array[Dictionary] = []
 var title_walkers: Array[Dictionary] = []
+var title_floaters: Array[Dictionary] = []
+var title_anim_time: float = 0.0
 var current_location_data: Dictionary = {}
 
 var budget: int = 200000
-var current_tool: int = FacilityCatalog.ItemId.PATH_TILE
+var current_tool: int = -1
 var interaction_enabled: bool = false
 var is_painting: bool = false
 var is_erasing: bool = false
@@ -85,6 +87,7 @@ func _ready() -> void:
 	add_child(title_diorama_container)
 	var title_info := ProceduralProps.build_title_diorama(title_diorama_container)
 	title_walkers = title_info.get("walkers", [])
+	title_floaters = title_info.get("floaters", [])
 
 	city_props_container = Node3D.new()
 	city_props_container.name = "CityEnvironment"
@@ -154,12 +157,32 @@ func _build_grid_dots(dot_col: Color) -> void:
 			grid_dots_container.add_child(mi)
 
 func _process(delta: float) -> void:
+	title_anim_time += delta
+	if is_instance_valid(title_diorama_container):
+		title_diorama_container.position.y = sin(title_anim_time * 1.1) * 0.14
+		title_diorama_container.rotation.z = sin(title_anim_time * 0.75) * 0.015
+		title_diorama_container.rotation.x = cos(title_anim_time * 0.65) * 0.012
+
 	for w in title_walkers:
 		var w_node: Node3D = w["node"]
 		var ang: float = float(w["angle"]) + float(w["speed"]) * delta
 		w["angle"] = ang
 		var rad: float = float(w["radius"])
 		w_node.position = Vector3(cos(ang) * rad, absf(sin(ang * 6.0)) * 0.05, sin(ang) * rad)
+
+	for fl in title_floaters:
+		var f_node: Node3D = fl["node"]
+		if not is_instance_valid(f_node):
+			continue
+		var base_pos: Vector3 = fl["base_pos"]
+		var ph: float = float(fl["phase"])
+		var spd: float = float(fl["speed"])
+		var amp: float = float(fl["amp"])
+		var orb: float = float(fl["orbit"])
+		var t: float = title_anim_time * spd + ph
+		f_node.position = base_pos + Vector3(cos(t * 0.6) * orb, sin(t) * amp, sin(t * 0.5) * (orb * 0.6))
+		f_node.rotation.z = sin(t * 0.85) * 0.08
+		f_node.rotation.y += float(fl.get("rot_speed", 0.2)) * delta
 
 	var sim_speed := float(get_tree().get_meta("sim_speed", 1.0))
 	var in_match := bool(get_tree().get_meta("in_match", false))
@@ -211,7 +234,7 @@ func reset_plaza_and_inventory() -> void:
 
 	budget = int(current_location_data.get("starting_budget", 200000))
 	inventory.clear()
-	current_tool = FacilityCatalog.ItemId.PATH_TILE
+	current_tool = -1
 
 	# Build default straight path from Left Edge (-hw, 0) to Right Edge (hw, 0)
 	for gx in range(-grid_half_width, grid_half_width + 1):
@@ -266,6 +289,12 @@ func register_fixed_anchor(coords: Vector2i) -> void:
 func is_path_or_gate_tool(tool_id: int) -> bool:
 	return tool_id == FacilityCatalog.ItemId.PATH_TILE or tool_id == FacilityCatalog.ItemId.ENTRY_GATE or tool_id == FacilityCatalog.ItemId.EXIT_GATE
 
+func is_placeable_facility_tool(tool_id: int) -> bool:
+	return (
+		(tool_id >= FacilityCatalog.ItemId.FOOD_SHOP and tool_id <= FacilityCatalog.ItemId.LAMP_POST)
+		or (tool_id >= FacilityCatalog.ItemId.FLOWER_GARDEN and tool_id <= FacilityCatalog.ItemId.STREET_STAGE)
+	)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not interaction_enabled:
 		if hover_cursor:
@@ -296,10 +325,16 @@ func _update_hover_and_drag(screen_pos: Vector2) -> void:
 	var coords: Vector2i = coords_variant
 	var erasing := is_erasing or current_tool == FacilityCatalog.ItemId.ERASE_TOOL
 	if hover_cursor:
-		hover_cursor.visible = true
-		hover_cursor.global_position = Vector3(coords.x, 0.07, coords.y)
-		var can_act := _can_apply_tool_at(coords, erasing)
-		hover_cursor.material_override = mat_cursor_valid if can_act else mat_cursor_invalid
+		if current_tool < 0 and not is_erasing:
+			hover_cursor.visible = false
+		else:
+			hover_cursor.visible = true
+			hover_cursor.global_position = Vector3(coords.x, 0.07, coords.y)
+			var can_act := _can_apply_tool_at(coords, erasing)
+			hover_cursor.material_override = mat_cursor_valid if can_act else mat_cursor_invalid
+
+	if not erasing and current_tool < 0:
+		return
 
 	if is_painting and (is_path_or_gate_tool(current_tool) or current_tool == FacilityCatalog.ItemId.FENCE or current_tool == FacilityCatalog.ItemId.ERASE_TOOL):
 		_apply_tool_at_coords(coords, erasing)
@@ -312,6 +347,8 @@ func _apply_action_at_mouse(screen_pos: Vector2, force_erase: bool) -> void:
 		return
 	var coords: Vector2i = coords_variant
 	_update_hover_and_drag(screen_pos)
+	if not force_erase and current_tool < 0:
+		return
 	_apply_tool_at_coords(coords, force_erase or current_tool == FacilityCatalog.ItemId.ERASE_TOOL)
 
 func _can_apply_tool_at(coords: Vector2i, erasing: bool) -> bool:
@@ -320,6 +357,9 @@ func _can_apply_tool_at(coords: Vector2i, erasing: bool) -> bool:
 			return true
 		if placed_tile_nodes.has(coords) and not locked_cells.has(coords):
 			return true
+		return false
+
+	if current_tool < 0:
 		return false
 
 	if obstacle_cells.has(coords) or locked_cells.has(coords) or placed_facilities.has(coords) or fence_nodes.has(coords):
@@ -331,7 +371,7 @@ func _can_apply_tool_at(coords: Vector2i, erasing: bool) -> bool:
 		return can_afford_item(current_tool)
 	elif current_tool == FacilityCatalog.ItemId.FENCE:
 		return not placed_tile_nodes.has(coords) and can_afford_item(FacilityCatalog.ItemId.FENCE)
-	elif current_tool >= FacilityCatalog.ItemId.FOOD_SHOP and current_tool <= FacilityCatalog.ItemId.LAMP_POST:
+	elif is_placeable_facility_tool(current_tool):
 		if placed_tile_nodes.has(coords):
 			return false
 		return can_afford_item(current_tool)
@@ -347,11 +387,14 @@ func _apply_tool_at_coords(coords: Vector2i, erasing: bool) -> void:
 			remove_tile_at(coords)
 		return
 
+	if current_tool < 0:
+		return
+
 	if is_path_or_gate_tool(current_tool):
 		place_tile_at(coords, current_tool)
 	elif current_tool == FacilityCatalog.ItemId.FENCE:
 		place_fence_at(coords)
-	elif current_tool >= FacilityCatalog.ItemId.FOOD_SHOP and current_tool <= FacilityCatalog.ItemId.LAMP_POST:
+	elif is_placeable_facility_tool(current_tool):
 		_place_facility_at(coords, current_tool)
 
 func place_tile_at(coords: Vector2i, tile_type: int = FacilityCatalog.ItemId.PATH_TILE) -> void:
@@ -486,7 +529,7 @@ func spawn_trash_on_tile(coords: Vector2i) -> void:
 	if not trash_nodes.has(coords):
 		trash_nodes[coords] = []
 	var list: Array = trash_nodes[coords]
-	if list.size() >= 4:
+	if list.size() >= 5:
 		return
 	var prop := ProceduralProps.build_trash_prop(list.size())
 	prop.position = Vector3(
@@ -496,6 +539,7 @@ func spawn_trash_on_tile(coords: Vector2i) -> void:
 	)
 	trash_container.add_child(prop)
 	list.append(prop)
+	path_network.set_tile_trash_count(coords, list.size())
 
 func clean_trash_on_tile(coords: Vector2i) -> int:
 	if not trash_nodes.has(coords):
@@ -506,6 +550,7 @@ func clean_trash_on_tile(coords: Vector2i) -> int:
 		if is_instance_valid(node):
 			(node as Node3D).queue_free()
 	trash_nodes.erase(coords)
+	path_network.set_tile_trash_count(coords, 0)
 	return count
 
 func get_trash_count_on_tile(coords: Vector2i) -> int:
@@ -513,10 +558,17 @@ func get_trash_count_on_tile(coords: Vector2i) -> int:
 		return 0
 	return (trash_nodes[coords] as Array).size()
 
+func get_total_trash_on_plaza() -> int:
+	var total := 0
+	for list in trash_nodes.values():
+		total += (list as Array).size()
+	return total
+
 func clear_all_trash() -> void:
 	for coords in trash_nodes.keys():
 		clean_trash_on_tile(coords)
 	trash_nodes.clear()
+	path_network.clear_all_trash_counts()
 
 # --- Path & Gate Mesh Rendering ---
 
@@ -525,11 +577,20 @@ func _refresh_tile_and_neighbors(coords: Vector2i) -> void:
 	_refresh_neighbors_only(coords)
 
 func _refresh_neighbors_only(coords: Vector2i) -> void:
-	var dirs: Array[Vector2i] = [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.UP, Vector2i.DOWN]
-	for d in dirs:
-		var n := coords + d
-		if path_network.has_path_tile(n):
-			_rebuild_single_tile_mesh(n)
+	# Refresh all 8 surrounding neighbors (cardinal + diagonal) so corner connections update immediately
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			if dx == 0 and dz == 0:
+				continue
+			var n := coords + Vector2i(dx, dz)
+			if path_network.has_path_tile(n):
+				_rebuild_single_tile_mesh(n)
+
+func _is_tile_connected_to(coords: Vector2i, offset: Vector2i) -> bool:
+	var neighbor := coords + offset
+	var is_road_link := (coords.x == -grid_half_width and offset.x < 0) or (coords.x == grid_half_width and offset.x > 0)
+	var has_facility_neighbor := placed_facilities.has(neighbor)
+	return path_network.has_path_tile(neighbor) or is_road_link or has_facility_neighbor
 
 func _rebuild_single_tile_mesh(coords: Vector2i) -> void:
 	if placed_tile_nodes.has(coords):
@@ -549,18 +610,26 @@ func _rebuild_single_tile_mesh(coords: Vector2i) -> void:
 	ProceduralProps.add_cylinder(root, 0.47, 0.48, 0.04, Vector3(0, 0.02, 0), mat_curb, 18)
 	ProceduralProps.add_cylinder(root, 0.41, 0.42, 0.055, Vector3(0, 0.032, 0), mat_pavement, 18)
 
-	# Any tile at the left/right plaza edge links to the city road/sidewalk as a gate!
+	# Cardinal connections:
 	var dirs: Array[Vector2i] = [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.UP, Vector2i.DOWN]
 	for d in dirs:
-		var neighbor := coords + d
-		var is_road_link := (coords.x == -grid_half_width and d == Vector2i.LEFT) or (coords.x == grid_half_width and d == Vector2i.RIGHT)
-		var has_facility_neighbor := placed_facilities.has(neighbor)
-		if path_network.has_path_tile(neighbor) or is_road_link or has_facility_neighbor:
+		if _is_tile_connected_to(coords, d):
 			var offset := Vector3(d.x * 0.26, 0.0, d.y * 0.26)
 			var curb_size := Vector3(0.54, 0.04, 0.94) if d.x != 0 else Vector3(0.94, 0.04, 0.54)
 			var pave_size := Vector3(0.54, 0.055, 0.82) if d.x != 0 else Vector3(0.82, 0.055, 0.54)
 			ProceduralProps.add_box(root, curb_size, offset + Vector3(0, 0.02, 0), mat_curb)
 			ProceduralProps.add_box(root, pave_size, offset + Vector3(0, 0.032, 0), mat_pavement)
+
+	# Corner quadrant fillers: eliminate any small gap in the center when tiles connect (e.g. 2x2, 2x3, 3x3 plazas)
+	for cx in [-1, 1]:
+		for cz in [-1, 1]:
+			var horiz_connected := _is_tile_connected_to(coords, Vector2i(cx, 0))
+			var vert_connected := _is_tile_connected_to(coords, Vector2i(0, cz))
+			var diag_connected := _is_tile_connected_to(coords, Vector2i(cx, cz))
+			if (horiz_connected and vert_connected) or (diag_connected and (horiz_connected or vert_connected)):
+				var corner_pos := Vector3(float(cx) * 0.26, 0.0, float(cz) * 0.26)
+				ProceduralProps.add_box(root, Vector3(0.54, 0.04, 0.54), corner_pos + Vector3(0, 0.02, 0), mat_curb)
+				ProceduralProps.add_box(root, Vector3(0.54, 0.055, 0.54), corner_pos + Vector3(0, 0.032, 0), mat_pavement)
 
 	var tile_type := path_network.get_tile_type(coords)
 	if tile_type == FacilityCatalog.ItemId.ENTRY_GATE:

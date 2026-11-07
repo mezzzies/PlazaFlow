@@ -440,6 +440,72 @@ static func build_facility_visual(facility_type: int) -> Node3D:
 		add_cylinder(root, 0.18, 0.22, 0.06, Vector3(0, 1.46, 0), pole_mat, 12)
 		add_night_lamp(root, Vector3(0, 1.35, 0), Color(1.0, 0.86, 0.56), 5.8, 1.15)
 
+	elif facility_type == 13:
+		# 13 = FLOWER GARDEN: Lush circular botanical bed with stone birdbath, colorful blooms & garden bench
+		var soil_mat := get_mat("fg_soil", Color("5e432d"))
+		var leaf_mat := get_mat("fg_leaf", Color("5da65e"))
+		var pink_flw := get_mat("fg_pink", Color("f27d9b"))
+		var gold_flw := get_mat("fg_gold", Color("f7c948"))
+		var lav_flw := get_mat("fg_lav", Color("a77de8"))
+		var stone_mat := get_mat("fg_stone", Color("e4dacb"))
+
+		add_cylinder(root, 0.40, 0.42, 0.08, Vector3(0, 0.08, 0), soil_mat, 18)
+		# Central birdbath
+		add_cylinder(root, 0.09, 0.12, 0.34, Vector3(0, 0.25, 0), stone_mat, 12)
+		add_cylinder(root, 0.22, 0.18, 0.06, Vector3(0, 0.43, 0), stone_mat, 14)
+		# Ring of bushes and colorful flowers
+		var flw_mats: Array[StandardMaterial3D] = [pink_flw, gold_flw, lav_flw]
+		for i in range(6):
+			var ang := float(i) * (TAU / 6.0)
+			var bx := cos(ang) * 0.26
+			var bz := sin(ang) * 0.26
+			add_sphere(root, 0.13, 0.18, Vector3(bx, 0.17, bz), leaf_mat)
+			add_sphere(root, 0.065, 0.10, Vector3(bx, 0.27, bz), flw_mats[i % 3])
+		add_night_lamp(root, Vector3(0, 0.65, 0), Color(1.0, 0.88, 0.66), 3.8, 0.9)
+
+	elif facility_type == 14:
+		# 14 = DUCK POND: Cozy miniature pond with stone rim, lily pads & 2 little yellow ducks
+		var water_mat := get_mat("dp_water", Color("6bc2d9"), 0.30)
+		var lily_mat := get_mat("dp_lily", Color("58a85c"))
+		var duck_mat := get_mat("dp_duck", Color("f7d046"))
+		var beak_mat := get_mat("dp_beak", Color("e8703a"))
+
+		add_cylinder(root, 0.41, 0.42, 0.06, Vector3(0, 0.075, 0), water_mat, 20)
+		add_cylinder(root, 0.10, 0.10, 0.015, Vector3(-0.16, 0.11, -0.10), lily_mat, 10)
+		add_cylinder(root, 0.09, 0.09, 0.015, Vector3(0.18, 0.11, 0.14), lily_mat, 10)
+		# Two little ducks
+		for dpos in [Vector3(-0.08, 0.14, 0.08), Vector3(0.12, 0.14, -0.08)]:
+			add_sphere(root, 0.075, 0.10, dpos, duck_mat)
+			add_sphere(root, 0.05, 0.09, dpos + Vector3(0.04, 0.06, 0.0), duck_mat)
+			add_box(root, Vector3(0.04, 0.02, 0.03), dpos + Vector3(0.08, 0.06, 0.0), beak_mat)
+		add_night_lamp(root, Vector3(0, 0.58, 0), Color(0.76, 0.94, 1.0), 3.6, 0.85)
+
+	elif facility_type == 15:
+		# 15 = COFFEE ROASTER: Warm brick & copper espresso kiosk with giant coffee cup sign
+		var brick_mat := get_mat("cr_brick", Color("9c4a38"))
+		var copper_mat := get_mat("cr_copper", Color("d48952"), 0.45)
+
+		add_box(root, Vector3(0.72, 0.46, 0.56), Vector3(0, 0.28, 0), brick_mat)
+		add_box(root, Vector3(0.78, 0.07, 0.62), Vector3(0, 0.54, 0), copper_mat)
+		add_prism(root, Vector3(0.82, 0.26, 0.66), Vector3(0, 0.70, 0), dark_wood_mat)
+		# Rooftop espresso cup emblem
+		add_cylinder(root, 0.13, 0.10, 0.18, Vector3(0, 0.92, 0), cream_mat, 14)
+		add_night_lamp(root, Vector3(0, 0.82, 0.24), Color(1.0, 0.82, 0.52), 3.8, 0.95)
+
+	elif facility_type == 16:
+		# 16 = STREET STAGE: Wooden acoustic performance deck with crimson arch & spotlight
+		var stage_mat := get_mat("ss_wood", Color("b8804f"))
+		var velvet_mat := get_mat("ss_velvet", Color("b54558"))
+		var gold_mat := get_mat("ss_gold", Color("f2c45a"))
+
+		add_cylinder(root, 0.43, 0.45, 0.12, Vector3(0, 0.10, 0), stage_mat, 18)
+		add_box(root, Vector3(0.68, 0.58, 0.10), Vector3(0, 0.44, -0.24), velvet_mat)
+		add_box(root, Vector3(0.74, 0.08, 0.16), Vector3(0, 0.75, -0.22), gold_mat)
+		# Microphone stand in center
+		add_cylinder(root, 0.018, 0.022, 0.42, Vector3(0, 0.36, 0.06), dark_wood_mat, 8)
+		add_sphere(root, 0.04, 0.07, Vector3(0, 0.58, 0.06), gold_mat)
+		add_night_lamp(root, Vector3(0, 0.88, 0.10), Color(1.0, 0.86, 0.58), 4.2, 1.05)
+
 	return root
 
 static func build_fence_mesh(root: Node3D, link_right: bool, link_left: bool, link_up: bool, link_down: bool) -> void:
@@ -849,9 +915,10 @@ static func build_title_diorama(parent: Node3D) -> Dictionary:
 	var walkers: Array[Dictionary] = []
 	var pawn_cols: Array[Color] = [
 		Color("e8654a"), Color("4a90ba"), Color("f0b43a"),
-		Color("6cae75"), Color("d97298"), Color("e8654a")
+		Color("6cae75"), Color("d97298"), Color("e8654a"),
+		Color("5b84c4"), Color("e28743")
 	]
-	for i in range(6):
+	for i in range(8):
 		var pawn := Node3D.new()
 		var p_mat := get_mat("title_pawn_%d" % i, pawn_cols[i])
 		add_cylinder(pawn, 0.12, 0.18, 0.36, Vector3(0, 0.22, 0), p_mat, 14)
@@ -859,9 +926,78 @@ static func build_title_diorama(parent: Node3D) -> Dictionary:
 		parent.add_child(pawn)
 		walkers.append({
 			"node": pawn,
-			"angle": float(i) * (TAU / 6.0),
-			"radius": 2.15 + float(i % 2) * 0.42,
+			"angle": float(i) * (TAU / 8.0),
+			"radius": 2.05 + float(i % 3) * 0.38,
 			"speed": (0.55 + float(i % 3) * 0.12) * (1.0 if i % 2 == 0 else -1.0)
 		})
 
-	return {"walkers": walkers}
+	# Floating 3D Hot-Air Balloons & Puffy Clouds for a lively 3D title scene
+	var floaters: Array[Dictionary] = []
+	var balloon_configs: Array[Dictionary] = [
+		{"pos": Vector3(-5.8, 3.8, -2.5), "col1": Color("e8654a"), "col2": Color("f6d57a"), "phase": 0.0, "amp": 0.42, "speed": 1.35, "orbit": 0.35},
+		{"pos": Vector3(6.2, 4.4, -3.2), "col1": Color("4a90ba"), "col2": Color("f4ede2"), "phase": 2.1, "amp": 0.48, "speed": 1.15, "orbit": 0.40},
+		{"pos": Vector3(1.8, 5.1, -5.8), "col1": Color("9b6bb8"), "col2": Color("f2b880"), "phase": 4.2, "amp": 0.36, "speed": 1.50, "orbit": 0.30}
+	]
+	for b_cfg in balloon_configs:
+		var b_node := build_hot_air_balloon(b_cfg["col1"], b_cfg["col2"])
+		b_node.position = b_cfg["pos"]
+		parent.add_child(b_node)
+		floaters.append({
+			"node": b_node,
+			"base_pos": b_cfg["pos"],
+			"phase": float(b_cfg["phase"]),
+			"amp": float(b_cfg["amp"]),
+			"speed": float(b_cfg["speed"]),
+			"orbit": float(b_cfg["orbit"]),
+			"rot_speed": 0.45
+		})
+
+	var cloud_positions: Array[Vector3] = [
+		Vector3(-9.2, 4.8, -5.5),
+		Vector3(9.0, 5.3, -4.6),
+		Vector3(-7.8, 4.3, 4.6),
+		Vector3(8.2, 4.6, 4.0)
+	]
+	for ci in range(cloud_positions.size()):
+		var c_node := build_cozy_cloud(0.85 + float(ci % 2) * 0.22)
+		c_node.position = cloud_positions[ci]
+		parent.add_child(c_node)
+		floaters.append({
+			"node": c_node,
+			"base_pos": cloud_positions[ci],
+			"phase": float(ci) * 1.55,
+			"amp": 0.22,
+			"speed": 0.85 + float(ci) * 0.12,
+			"orbit": 0.55,
+			"rot_speed": 0.08
+		})
+
+	return {"walkers": walkers, "floaters": floaters}
+
+static func build_hot_air_balloon(primary_col: Color, stripe_col: Color) -> Node3D:
+	var root := Node3D.new()
+	var mat_main := get_mat("balloon_main_%s" % primary_col.to_html(), primary_col, 0.78)
+	var mat_stripe := get_mat("balloon_stripe_%s" % stripe_col.to_html(), stripe_col, 0.82)
+	var mat_basket := get_mat("balloon_basket", Color("a67449"), 0.90)
+	var mat_rope := get_mat("balloon_rope", Color("594a42"), 0.90)
+
+	# Envelope spheres & tapered neck
+	add_sphere(root, 0.72, 1.48, Vector3(0, 1.05, 0), mat_main)
+	add_cylinder(root, 0.74, 0.70, 0.28, Vector3(0, 1.05, 0), mat_stripe, 18)
+	add_cylinder(root, 0.45, 0.24, 0.36, Vector3(0, 0.38, 0), mat_stripe, 14)
+
+	# Ropes & wicker basket
+	for rx in [-0.11, 0.11]:
+		for rz in [-0.11, 0.11]:
+			add_box(root, Vector3(0.02, 0.28, 0.02), Vector3(rx, 0.14, rz), mat_rope)
+	add_box(root, Vector3(0.32, 0.24, 0.32), Vector3(0, -0.04, 0), mat_basket)
+	return root
+
+static func build_cozy_cloud(scale_factor: float = 1.0) -> Node3D:
+	var root := Node3D.new()
+	var mat_cloud := get_mat("cozy_cloud_white", Color("fbf8f3"), 0.92)
+	add_sphere(root, 0.62 * scale_factor, 0.78 * scale_factor, Vector3(0, 0, 0), mat_cloud)
+	add_sphere(root, 0.48 * scale_factor, 0.62 * scale_factor, Vector3(-0.52 * scale_factor, -0.06 * scale_factor, 0.08 * scale_factor), mat_cloud)
+	add_sphere(root, 0.50 * scale_factor, 0.64 * scale_factor, Vector3(0.54 * scale_factor, -0.05 * scale_factor, -0.06 * scale_factor), mat_cloud)
+	add_sphere(root, 0.38 * scale_factor, 0.48 * scale_factor, Vector3(0.18 * scale_factor, 0.18 * scale_factor, 0.24 * scale_factor), mat_cloud)
+	return root

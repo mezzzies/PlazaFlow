@@ -225,60 +225,77 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Panel" type="PanelContainer" parent="HUD/StartMenuPanel"]
+[node name="Panel" type="Control" parent="HUD/StartMenuPanel"]
 layout_mode = 1
 anchors_preset = 4
 anchor_top = 0.5
 anchor_bottom = 0.5
-offset_left = 72.0
-offset_top = -185.0
-offset_right = 472.0
-offset_bottom = 185.0
+offset_left = 64.0
+offset_top = -250.0
+offset_right = 514.0
+offset_bottom = 250.0
 grow_vertical = 2
+mouse_filter = 2
 
-[node name="VBox" type="VBoxContainer" parent="HUD/StartMenuPanel/Panel"]
-layout_mode = 2
-theme_override_constants/separation = 14
-alignment = 1
+[node name="VBox" type="Control" parent="HUD/StartMenuPanel/Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
 [node name="TitleLabel" type="Label" parent="HUD/StartMenuPanel/Panel/VBox"]
-layout_mode = 2
+visible = false
+layout_mode = 0
+offset_right = 400.0
+offset_bottom = 60.0
 theme_override_colors/font_color = Color(0.98, 0.95, 0.88, 1)
 theme_override_font_sizes/font_size = 42
 text = "PLAZA FLOW"
 horizontal_alignment = 1
 
 [node name="SubtitleLabel" type="Label" parent="HUD/StartMenuPanel/Panel/VBox"]
-layout_mode = 2
+visible = false
+layout_mode = 0
+offset_top = 64.0
+offset_right = 400.0
+offset_bottom = 90.0
 theme_override_colors/font_color = Color(0.86, 0.82, 0.74, 1)
 theme_override_font_sizes/font_size = 16
 text = "Cozy Urban Plaza & Crowd Flow Diorama"
 horizontal_alignment = 1
 
-[node name="Spacer" type="Control" parent="HUD/StartMenuPanel/Panel/VBox"]
-custom_minimum_size = Vector2(0, 6)
-layout_mode = 2
-
 [node name="PlayButton" type="Button" parent="HUD/StartMenuPanel/Panel/VBox"]
-custom_minimum_size = Vector2(240, 48)
-layout_mode = 2
-size_flags_horizontal = 4
+custom_minimum_size = Vector2(310, 74)
+layout_mode = 0
+offset_left = 20.0
+offset_top = 196.0
+offset_right = 330.0
+offset_bottom = 270.0
 theme_override_font_sizes/font_size = 22
-text = "Select Location →"
+text = ""
 
 [node name="OptionsButton" type="Button" parent="HUD/StartMenuPanel/Panel/VBox"]
-custom_minimum_size = Vector2(240, 44)
-layout_mode = 2
-size_flags_horizontal = 4
+custom_minimum_size = Vector2(290, 66)
+layout_mode = 0
+offset_left = 34.0
+offset_top = 290.0
+offset_right = 324.0
+offset_bottom = 356.0
 theme_override_font_sizes/font_size = 19
-text = "Options"
+text = ""
 
 [node name="QuitButton" type="Button" parent="HUD/StartMenuPanel/Panel/VBox"]
-custom_minimum_size = Vector2(240, 44)
-layout_mode = 2
-size_flags_horizontal = 4
+custom_minimum_size = Vector2(270, 62)
+layout_mode = 0
+offset_left = 48.0
+offset_top = 376.0
+offset_right = 318.0
+offset_bottom = 438.0
 theme_override_font_sizes/font_size = 19
-text = "Quit Game"
+text = ""
 
 [node name="LocationSelectPanel" type="Control" parent="HUD"]
 visible = false
@@ -297,75 +314,54 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -460.0
-offset_top = -310.0
-offset_right = 460.0
-offset_bottom = -20.0
+offset_left = -520.0
+offset_top = -340.0
+offset_right = 520.0
+offset_bottom = -18.0
 grow_horizontal = 2
 grow_vertical = 0
+mouse_filter = 2
 
 [node name="VBox" type="VBoxContainer" parent="HUD/LocationSelectPanel/Panel"]
 layout_mode = 2
-theme_override_constants/separation = 10
+mouse_filter = 2
+theme_override_constants/separation = 16
+alignment = 2
 
 [node name="HeaderLabel" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.98, 0.94, 0.84, 1)
+theme_override_colors/font_color = Color(0.99, 0.96, 0.88, 1)
+theme_override_colors/font_outline_color = Color(0.14, 0.16, 0.22, 0.92)
+theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 22
 text = "CHOOSE A PLAZA LOCATION"
 horizontal_alignment = 1
 
 [node name="LocCardsHBox" type="HBoxContainer" parent="HUD/LocationSelectPanel/Panel/VBox"]
+custom_minimum_size = Vector2(0, 224)
 layout_mode = 2
-theme_override_constants/separation = 12
-alignment = 1
-
-[node name="DetailBox" type="HBoxContainer" parent="HUD/LocationSelectPanel/Panel/VBox"]
-layout_mode = 2
+mouse_filter = 2
 theme_override_constants/separation = 18
 alignment = 1
 
-[node name="LocDetailTitle" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox/DetailBox"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.92, 0.72, 1)
-theme_override_font_sizes/font_size = 19
-text = "Old Town Square — Historic District"
-
-[node name="LocDetailBadge" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox/DetailBox"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 17
-text = "Difficulty: Relaxed"
-
-[node name="LocDetailDesc" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.88, 0.86, 0.82, 1)
-theme_override_font_sizes/font_size = 15
-text = "A sleepy cobblestone square tucked between two quiet streets."
-horizontal_alignment = 1
-
-[node name="LocDetailRule" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.75, 0.92, 0.78, 1)
-theme_override_font_sizes/font_size = 15
-text = "Scenario Rule: Balanced visitor needs."
-horizontal_alignment = 1
-
 [node name="ActionsHBox" type="HBoxContainer" parent="HUD/LocationSelectPanel/Panel/VBox"]
+custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
-theme_override_constants/separation = 20
+mouse_filter = 2
+theme_override_constants/separation = 24
 alignment = 1
 
 [node name="BackToTitleBtn" type="Button" parent="HUD/LocationSelectPanel/Panel/VBox/ActionsHBox"]
-custom_minimum_size = Vector2(180, 42)
+custom_minimum_size = Vector2(190, 48)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "← Back to Title"
 
 [node name="StartLocationBtn" type="Button" parent="HUD/LocationSelectPanel/Panel/VBox/ActionsHBox"]
-custom_minimum_size = Vector2(220, 42)
+custom_minimum_size = Vector2(230, 48)
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "Start Plaza →"
+text = "▶ Start Plaza"
 
 [node name="OptionsPanel" type="Control" parent="HUD"]
 visible = false
@@ -492,35 +488,36 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -360.0
-offset_top = -150.0
-offset_right = 360.0
-offset_bottom = 150.0
+offset_left = -420.0
+offset_top = -120.0
+offset_right = 420.0
+offset_bottom = 195.0
 grow_horizontal = 2
 grow_vertical = 2
 
 [node name="VBox" type="VBoxContainer" parent="HUD/DraftModal/Panel"]
 layout_mode = 2
-theme_override_constants/separation = 18
+theme_override_constants/separation = 16
 alignment = 1
 
 [node name="DraftTitleLabel" type="Label" parent="HUD/DraftModal/Panel/VBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.92, 0.65, 1)
 theme_override_font_sizes/font_size = 24
-text = "Monday Week 2 — Choose a New Plaza Supply Card"
+text = "Wednesday Plaza Upgrade — Choose 1 of 2 New Facilities"
 horizontal_alignment = 1
 
 [node name="DraftSubLabel" type="Label" parent="HUD/DraftModal/Panel/VBox"]
+visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.82, 0.86, 0.9, 1)
 theme_override_font_sizes/font_size = 15
-text = "Select 1 reward package to expand your plaza for the upcoming week:"
+text = ""
 horizontal_alignment = 1
 
 [node name="CardsHBox" type="HBoxContainer" parent="HUD/DraftModal/Panel/VBox"]
 layout_mode = 2
-theme_override_constants/separation = 18
+theme_override_constants/separation = 22
 alignment = 1
 
 [node name="GameOverPanel" type="Control" parent="HUD"]

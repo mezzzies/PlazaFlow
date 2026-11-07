@@ -23,7 +23,11 @@ enum ItemId {
 	ERASE_TOOL = 9,
 	FENCE = 10,
 	ENTRY_GATE = 11,
-	EXIT_GATE = 12
+	EXIT_GATE = 12,
+	FLOWER_GARDEN = 13,
+	DUCK_POND = 14,
+	COFFEE_ROASTER = 15,
+	STREET_STAGE = 16
 }
 
 enum StaffId {
@@ -182,6 +186,54 @@ const ITEMS: Dictionary = {
 		"capacity": 10,
 		"need": -1,
 		"summary": "One-way Gate ($2k). Only allows customers to walk OUT."
+	},
+	ItemId.FLOWER_GARDEN: {
+		"id": ItemId.FLOWER_GARDEN,
+		"name": "Flower Garden",
+		"category": Category.COMFORT,
+		"cost": 9000,
+		"income": 0,
+		"service_time": 2.6,
+		"capacity": 6,
+		"need": NeedType.SIT,
+		"special_unlock": true,
+		"summary": "Special Comfort ($9k). Attracts Elders & speeds up rest."
+	},
+	ItemId.DUCK_POND: {
+		"id": ItemId.DUCK_POND,
+		"name": "Duck Pond",
+		"category": Category.COMFORT,
+		"cost": 9500,
+		"income": 0,
+		"service_time": 2.8,
+		"capacity": 6,
+		"need": NeedType.SIT,
+		"special_unlock": true,
+		"summary": "Special Comfort ($9.5k). Attracts Couples & Kids; prevents getting lost."
+	},
+	ItemId.COFFEE_ROASTER: {
+		"id": ItemId.COFFEE_ROASTER,
+		"name": "Coffee Roaster",
+		"category": Category.DINING,
+		"cost": 14000,
+		"income": 140,
+		"service_time": 1.1,
+		"capacity": 7,
+		"need": NeedType.DRINK,
+		"special_unlock": true,
+		"summary": "Special Dining ($14k). Attracts Business visitors; +$140/use."
+	},
+	ItemId.STREET_STAGE: {
+		"id": ItemId.STREET_STAGE,
+		"name": "Street Stage",
+		"category": Category.SERVICE,
+		"cost": 13000,
+		"income": 60,
+		"service_time": 2.4,
+		"capacity": 8,
+		"need": NeedType.SIT,
+		"special_unlock": true,
+		"summary": "Special Service ($13k). Attracts Couples & boosts queue patience."
 	}
 }
 

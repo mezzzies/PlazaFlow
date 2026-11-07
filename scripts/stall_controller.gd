@@ -60,13 +60,18 @@ func _rebuild_visual() -> void:
 	add_child(new_vis)
 
 func is_comfort_facility() -> bool:
-	return stall_type == FacilityCatalog.ItemId.PICNIC_TABLE or stall_type == FacilityCatalog.ItemId.BENCH
+	return (
+		stall_type == FacilityCatalog.ItemId.PICNIC_TABLE
+		or stall_type == FacilityCatalog.ItemId.BENCH
+		or stall_type == FacilityCatalog.ItemId.FLOWER_GARDEN
+		or stall_type == FacilityCatalog.ItemId.DUCK_POND
+	)
 
 func is_trashcan() -> bool:
 	return stall_type == FacilityCatalog.ItemId.TRASHCAN
 
 func is_info_kiosk() -> bool:
-	return stall_type == FacilityCatalog.ItemId.INFO_KIOSK
+	return stall_type == FacilityCatalog.ItemId.INFO_KIOSK or stall_type == FacilityCatalog.ItemId.DUCK_POND
 
 func is_lamp_post() -> bool:
 	return stall_type == FacilityCatalog.ItemId.LAMP_POST

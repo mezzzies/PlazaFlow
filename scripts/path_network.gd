@@ -18,6 +18,7 @@ var impassable_cells: Dictionary = {} # Vector2i -> bool (water, obstacles, faci
 var water_cells: Dictionary = {} # Vector2i -> bool (river, pond)
 var fence_cells: Dictionary = {} # Vector2i -> bool
 var tile_occupants: Dictionary = {} # Vector2i -> Array[Node3D]
+var tile_trash_counts: Dictionary = {} # Vector2i -> int
 
 func _ready() -> void:
 	clear_all()
@@ -31,6 +32,7 @@ func clear_all() -> void:
 	water_cells.clear()
 	fence_cells.clear()
 	tile_occupants.clear()
+	tile_trash_counts.clear()
 
 func setup_plaza_grid(hw: int, hh: int, obstacles: Dictionary, bridges: Array = []) -> void:
 	clear_all()
@@ -339,13 +341,37 @@ func get_tile_occupancy(coords: Vector2i) -> int:
 func is_tile_full(coords: Vector2i, incoming_headcount: int = 1) -> bool:
 	return get_tile_occupancy(coords) + incoming_headcount > MAX_PEOPLE_PER_TILE
 
-func get_crowd_speed_multiplier(coords: Vector2i, has_security_boost: bool = false, trash_count: int = 0) -> float:
+func set_tile_trash_count(coords: Vector2i, count: int) -> void:
+	if count <= 0:
+		tile_trash_counts.erase(coords)
+	else:
+		tile_trash_counts[coords] = count
+
+func get_tile_trash_count(coords: Vector2i) -> int:
+	return int(tile_trash_counts.get(coords, 0))
+
+func clear_all_trash_counts() -> void:
+	tile_trash_counts.clear()
+
+## 3 levels of cleanliness:
+## Clean (0 trash) = 100% speed
+## Dirty (1-2 trash) = 80% speed
+## Max Dirty (3+ trash) = 60% speed
+func get_cleanliness_multiplier(trash_count: int) -> float:
+	if trash_count <= 0:
+		return 1.0 # Clean = 100%
+	elif trash_count <= 2:
+		return 0.80 # Dirty = 80%
+	else:
+		return 0.60 # Max Dirty (3+) = 60%
+
+func get_crowd_speed_multiplier(coords: Vector2i, has_security_boost: bool = false, trash_count: int = -1) -> float:
 	var n := clampi(get_tile_occupancy(coords), 1, MAX_PEOPLE_PER_TILE)
 	var mult := lerpf(1.0, 0.05, float(n - 1) / float(MAX_PEOPLE_PER_TILE - 1))
 	if has_security_boost and n > 1:
 		mult = clampf(maxf(mult * 1.40, 0.35), 0.35, 1.0)
-	if trash_count > 0:
-		mult *= maxf(0.65, 1.0 - 0.10 * float(trash_count))
+	var actual_trash := trash_count if trash_count >= 0 else get_tile_trash_count(coords)
+	mult *= get_cleanliness_multiplier(actual_trash)
 	return mult
 
 func compute_separation_push(agent: Node3D, coords: Vector2i) -> Vector3:

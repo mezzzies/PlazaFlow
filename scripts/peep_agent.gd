@@ -42,6 +42,10 @@ var prefers_crowd_diversion: bool = true
 var is_walking_freely: bool = false
 var head_popup_timer: float = 0.0
 
+var crowd_aversion: float = 1.0
+var distance_tolerance: float = 1.0
+var personality_whim_seed: float = 0.0
+
 var path_net_ref: PathNetwork = null
 var registered_tile: Vector2i = Vector2i(-999, -999)
 var is_registered_on_tile: bool = false
@@ -107,23 +111,36 @@ func setup_citizen_full(
 	# Most customers follow the recommended walking tiles; a small percentage casually wander off-path
 	is_walking_freely = (randf() < 0.12) and (archetype != Archetype.BUSINESS)
 
+	# Thought of their own: individual personality regarding crowd tolerance and willingness to walk
+	crowd_aversion = randf_range(0.85, 1.25)
+	distance_tolerance = randf_range(0.85, 1.25)
+	personality_whim_seed = randf_range(-3.0, 3.0)
+
 	match archetype:
 		Archetype.ELDER:
 			walk_speed = 1.35
 			max_need_patience = 36.0
 			prefers_crowd_diversion = true
+			crowd_aversion = randf_range(1.15, 1.65)
+			distance_tolerance = randf_range(0.55, 0.85)
 		Archetype.BUSINESS:
 			walk_speed = 3.80
 			max_need_patience = 18.0
 			prefers_crowd_diversion = false
+			crowd_aversion = randf_range(2.2, 3.5)
+			distance_tolerance = randf_range(1.2, 1.7)
 		Archetype.COUPLE:
 			walk_speed = 2.60
 			max_need_patience = 28.0
 			prefers_crowd_diversion = randf() < 0.65
+			crowd_aversion = randf_range(1.4, 2.0)
+			distance_tolerance = randf_range(0.9, 1.3)
 		Archetype.CHILD:
 			walk_speed = 2.95
 			max_need_patience = 26.0
 			prefers_crowd_diversion = randf() < 0.7
+			crowd_aversion = randf_range(0.7, 1.3)
+			personality_whim_seed = randf_range(-5.5, 5.5)
 			if randf() < 0.25:
 				is_walking_freely = true
 		_:
@@ -347,15 +364,15 @@ func _process(delta: float) -> void:
 	blocked_wait_timer = 0.0
 	has_diverted_from_block = false
 
-	# Crowd density speed multiplier (100% at 1 person -> 5% at 10 people)
+	# Crowd density & tile cleanliness speed multiplier
 	var crowd_mult := 1.0
 	var sep_push := Vector3.ZERO
 	if path_net_ref:
 		if is_walking_freely and state == AgentState.EXITING_FRUSTRATED:
-			crowd_mult = 0.85
+			crowd_mult = 0.85 * path_net_ref.get_cleanliness_multiplier(path_net_ref.get_tile_trash_count(cur_cell))
 		else:
 			crowd_mult = path_net_ref.get_crowd_speed_multiplier(
-				cur_cell, current_tile_security_boost, current_tile_trash_count
+				cur_cell, current_tile_security_boost
 			)
 		sep_push = path_net_ref.compute_separation_push(self, cur_cell) * 0.16
 
