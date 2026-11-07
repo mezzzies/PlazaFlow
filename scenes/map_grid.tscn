@@ -1,0 +1,37 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/grid_manager.gd" id="1_grid"]
+[ext_resource type="Script" path="res://scripts/path_network.gd" id="2_net"]
+[ext_resource type="Material" path="res://assets/materials/mat_ground_grass.tres" id="3_grass"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+material = ExtResource("3_grass")
+size = Vector2(44, 34)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_cursor"]
+transparency = 1
+albedo_color = Color(0.35, 0.95, 0.55, 0.45)
+roughness = 0.9
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_cursor"]
+material = SubResource("StandardMaterial3D_cursor")
+top_radius = 0.46
+bottom_radius = 0.46
+height = 0.05
+radial_segments = 20
+
+[node name="MapGrid" type="Node3D"]
+script = ExtResource("1_grid")
+
+[node name="PathNetwork" type="Node" parent="."]
+script = ExtResource("2_net")
+
+[node name="GroundPlane" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="TilesContainer" type="Node3D" parent="."]
+
+[node name="HoverCursor" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07, 0)
+visible = false
+mesh = SubResource("CylinderMesh_cursor")

@@ -1,0 +1,17 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/stall_controller.gd" id="1_stall"]
+
+[node name="Stall" type="Node3D"]
+script = ExtResource("1_stall")
+
+[node name="StallVisual" type="Node3D" parent="."]
+
+[node name="PatienceLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
+visible = false
+billboard = 1
+no_depth_test = true
+text = "Food Shop (0/5)"
+font_size = 28
+outline_size = 8

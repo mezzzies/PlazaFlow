@@ -1,0 +1,617 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/game_director.gd" id="1_director"]
+[ext_resource type="PackedScene" path="res://scenes/map_grid.tscn" id="2_map_grid"]
+[ext_resource type="PackedScene" path="res://scenes/peep.tscn" id="3_peep"]
+[ext_resource type="Script" path="res://scripts/camera_rig.gd" id="4_cam_rig"]
+[ext_resource type="Script" path="res://scripts/day_night_cycle.gd" id="5_day_night"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.54, 0.72, 0.86, 1)
+sky_horizon_color = Color(0.86, 0.84, 0.78, 1)
+ground_bottom_color = Color(0.82, 0.76, 0.66, 1)
+ground_horizon_color = Color(0.86, 0.84, 0.78, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+ambient_light_color = Color(0.92, 0.88, 0.82, 1)
+ambient_light_sky_contribution = 0.38
+ambient_light_energy = 0.36
+tonemap_mode = 2
+tonemap_exposure = 0.85
+ssao_enabled = true
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_director")
+peep_scene = ExtResource("3_peep")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.882948, -0.397131, 0.25, 0, 0.532786, 0.84625, -0.469472, -0.747195, 0.470422, 0, 14, 0)
+light_color = Color(0.98, 0.93, 0.84, 1)
+light_energy = 0.52
+shadow_enabled = true
+directional_shadow_max_distance = 55.0
+
+[node name="DayNightCycle" type="Node" parent="." node_paths=PackedStringArray("sun_light", "world_env")]
+script = ExtResource("5_day_night")
+sun_light = NodePath("../DirectionalLight3D")
+world_env = NodePath("../WorldEnvironment")
+
+[node name="CameraPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -42)
+script = ExtResource("4_cam_rig")
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot"]
+transform = Transform3D(1, 0, 0, 0, 0.469472, 0.882948, 0, -0.882948, 0.469472, 0, 18, 8.8)
+projection = 1
+size = 11.2
+near = 0.1
+far = 120.0
+
+[node name="MapGrid" parent="." instance=ExtResource("2_map_grid")]
+
+[node name="Peeps" type="Node3D" parent="."]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="TopBar" type="HBoxContainer" parent="HUD"]
+visible = false
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 20.0
+offset_top = 16.0
+offset_right = -20.0
+offset_bottom = 112.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_constants/separation = 16
+
+[node name="LeftCard" type="PanelContainer" parent="HUD/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+
+[node name="HBox" type="VBoxContainer" parent="HUD/TopBar/LeftCard"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HappinessLabel" type="Label" parent="HUD/TopBar/LeftCard/HBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.58, 0.58, 1)
+theme_override_font_sizes/font_size = 19
+text = "♥ 100"
+
+[node name="HappinessBar" type="ProgressBar" parent="HUD/TopBar/LeftCard/HBox"]
+visible = false
+custom_minimum_size = Vector2(110, 20)
+layout_mode = 2
+size_flags_vertical = 4
+value = 100.0
+show_percentage = false
+
+[node name="ReputationLabel" type="Label" parent="HUD/TopBar/LeftCard/HBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
+theme_override_font_sizes/font_size = 19
+text = "★ 1.0"
+
+[node name="RateLabel" type="Label" parent="HUD/TopBar/LeftCard/HBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 0.86, 0.9, 1)
+theme_override_font_sizes/font_size = 15
+text = ""
+
+[node name="BudgetLabel" type="Label" parent="HUD/TopBar/LeftCard/HBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.96, 0.65, 1)
+theme_override_font_sizes/font_size = 19
+text = "💰 $200k"
+
+[node name="TopSpacer" type="Control" parent="HUD/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="RightCard" type="PanelContainer" parent="HUD/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 0
+
+[node name="HBox" type="HBoxContainer" parent="HUD/TopBar/RightCard"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="DayLabel" type="Label" parent="HUD/TopBar/RightCard/HBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "Old Town Square  |  MON — Week 1"
+
+[node name="PhaseLabel" type="Label" parent="HUD/TopBar/RightCard/HBox"]
+custom_minimum_size = Vector2(130, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "☀ DAY (60s)"
+
+[node name="SpeedBox" type="HBoxContainer" parent="HUD/TopBar/RightCard/HBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BtnPause" type="Button" parent="HUD/TopBar/RightCard/HBox/SpeedBox"]
+custom_minimum_size = Vector2(72, 34)
+layout_mode = 2
+tooltip_text = "Shortcut: Spacebar"
+text = "[Space] ||"
+
+[node name="Btn1x" type="Button" parent="HUD/TopBar/RightCard/HBox/SpeedBox"]
+custom_minimum_size = Vector2(64, 34)
+layout_mode = 2
+tooltip_text = "Shortcut: Key 1"
+text = "[1] 1x"
+
+[node name="Btn15x" type="Button" parent="HUD/TopBar/RightCard/HBox/SpeedBox"]
+custom_minimum_size = Vector2(74, 34)
+layout_mode = 2
+tooltip_text = "Shortcut: Key 2"
+text = "[2] 1.5x"
+
+[node name="Btn2x" type="Button" parent="HUD/TopBar/RightCard/HBox/SpeedBox"]
+custom_minimum_size = Vector2(64, 34)
+layout_mode = 2
+tooltip_text = "Shortcut: Key 3"
+text = "[3] 2x"
+
+[node name="BtnOptions" type="Button" parent="HUD/TopBar/RightCard/HBox"]
+custom_minimum_size = Vector2(80, 34)
+layout_mode = 2
+text = "Options"
+
+[node name="BtnMenu" type="Button" parent="HUD/TopBar/RightCard/HBox"]
+custom_minimum_size = Vector2(72, 34)
+layout_mode = 2
+text = "Menu"
+
+[node name="BottomDock" type="PanelContainer" parent="HUD"]
+visible = false
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -360.0
+offset_top = -104.0
+offset_right = 360.0
+offset_bottom = -14.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="HUD/BottomDock"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CategoryTabsHBox" type="HBoxContainer" parent="HUD/BottomDock/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="ToolsHBox" type="HBoxContainer" parent="HUD/BottomDock/VBox"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="HintLabel" type="Label" parent="HUD/BottomDock/VBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 0.86, 0.9, 1)
+theme_override_font_sizes/font_size = 13
+text = ""
+horizontal_alignment = 1
+
+[node name="StartMenuPanel" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="HUD/StartMenuPanel"]
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = 72.0
+offset_top = -185.0
+offset_right = 472.0
+offset_bottom = 185.0
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="HUD/StartMenuPanel/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="TitleLabel" type="Label" parent="HUD/StartMenuPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.95, 0.88, 1)
+theme_override_font_sizes/font_size = 42
+text = "PLAZA FLOW"
+horizontal_alignment = 1
+
+[node name="SubtitleLabel" type="Label" parent="HUD/StartMenuPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.86, 0.82, 0.74, 1)
+theme_override_font_sizes/font_size = 16
+text = "Cozy Urban Plaza & Crowd Flow Diorama"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="HUD/StartMenuPanel/Panel/VBox"]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+
+[node name="PlayButton" type="Button" parent="HUD/StartMenuPanel/Panel/VBox"]
+custom_minimum_size = Vector2(240, 48)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_font_sizes/font_size = 22
+text = "Select Location →"
+
+[node name="OptionsButton" type="Button" parent="HUD/StartMenuPanel/Panel/VBox"]
+custom_minimum_size = Vector2(240, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_font_sizes/font_size = 19
+text = "Options"
+
+[node name="QuitButton" type="Button" parent="HUD/StartMenuPanel/Panel/VBox"]
+custom_minimum_size = Vector2(240, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_font_sizes/font_size = 19
+text = "Quit Game"
+
+[node name="LocationSelectPanel" type="Control" parent="HUD"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="HUD/LocationSelectPanel"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -460.0
+offset_top = -310.0
+offset_right = 460.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="HUD/LocationSelectPanel/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HeaderLabel" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.94, 0.84, 1)
+theme_override_font_sizes/font_size = 22
+text = "CHOOSE A PLAZA LOCATION"
+horizontal_alignment = 1
+
+[node name="LocCardsHBox" type="HBoxContainer" parent="HUD/LocationSelectPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="DetailBox" type="HBoxContainer" parent="HUD/LocationSelectPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="LocDetailTitle" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox/DetailBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.92, 0.72, 1)
+theme_override_font_sizes/font_size = 19
+text = "Old Town Square — Historic District"
+
+[node name="LocDetailBadge" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox/DetailBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+text = "Difficulty: Relaxed"
+
+[node name="LocDetailDesc" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.88, 0.86, 0.82, 1)
+theme_override_font_sizes/font_size = 15
+text = "A sleepy cobblestone square tucked between two quiet streets."
+horizontal_alignment = 1
+
+[node name="LocDetailRule" type="Label" parent="HUD/LocationSelectPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.92, 0.78, 1)
+theme_override_font_sizes/font_size = 15
+text = "Scenario Rule: Balanced visitor needs."
+horizontal_alignment = 1
+
+[node name="ActionsHBox" type="HBoxContainer" parent="HUD/LocationSelectPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="BackToTitleBtn" type="Button" parent="HUD/LocationSelectPanel/Panel/VBox/ActionsHBox"]
+custom_minimum_size = Vector2(180, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "← Back to Title"
+
+[node name="StartLocationBtn" type="Button" parent="HUD/LocationSelectPanel/Panel/VBox/ActionsHBox"]
+custom_minimum_size = Vector2(220, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Start Plaza →"
+
+[node name="OptionsPanel" type="Control" parent="HUD"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dimmer" type="ColorRect" parent="HUD/OptionsPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.06, 0.08, 0.12, 0.5)
+
+[node name="Panel" type="PanelContainer" parent="HUD/OptionsPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -250.0
+offset_top = -175.0
+offset_right = 250.0
+offset_bottom = 175.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="HUD/OptionsPanel/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="OptTitle" type="Label" parent="HUD/OptionsPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "OPTIONS"
+horizontal_alignment = 1
+
+[node name="BrightnessBox" type="HBoxContainer" parent="HUD/OptionsPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BrightnessLabel" type="Label" parent="HUD/OptionsPanel/Panel/VBox/BrightnessBox"]
+custom_minimum_size = Vector2(145, 0)
+layout_mode = 2
+text = "Scene Brightness:"
+
+[node name="BrightnessSlider" type="HSlider" parent="HUD/OptionsPanel/Panel/VBox/BrightnessBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+min_value = 0.35
+max_value = 1.5
+step = 0.05
+value = 0.85
+
+[node name="BrightnessValue" type="Label" parent="HUD/OptionsPanel/Panel/VBox/BrightnessBox"]
+custom_minimum_size = Vector2(48, 0)
+layout_mode = 2
+text = "85%"
+horizontal_alignment = 2
+
+[node name="TopDownCheck" type="CheckButton" parent="HUD/OptionsPanel/Panel/VBox"]
+layout_mode = 2
+text = "Strict 90° Top-Down Camera View"
+
+[node name="DayNightCheck" type="CheckButton" parent="HUD/OptionsPanel/Panel/VBox"]
+layout_mode = 2
+button_pressed = true
+text = "Enable Day & Night Lighting Cycle"
+
+[node name="PanSpeedBox" type="HBoxContainer" parent="HUD/OptionsPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PanSpeedLabel" type="Label" parent="HUD/OptionsPanel/Panel/VBox/PanSpeedBox"]
+custom_minimum_size = Vector2(145, 0)
+layout_mode = 2
+text = "Camera Pan Speed:"
+
+[node name="PanSpeedSlider" type="HSlider" parent="HUD/OptionsPanel/Panel/VBox/PanSpeedBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+min_value = 5.0
+max_value = 25.0
+step = 1.0
+value = 12.0
+
+[node name="CloseOptButton" type="Button" parent="HUD/OptionsPanel/Panel/VBox"]
+custom_minimum_size = Vector2(160, 40)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Back"
+
+[node name="DraftModal" type="Control" parent="HUD"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dimmer" type="ColorRect" parent="HUD/DraftModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.06, 0.08, 0.12, 0.55)
+
+[node name="Panel" type="PanelContainer" parent="HUD/DraftModal"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -150.0
+offset_right = 360.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="HUD/DraftModal/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="DraftTitleLabel" type="Label" parent="HUD/DraftModal/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.92, 0.65, 1)
+theme_override_font_sizes/font_size = 24
+text = "Monday Week 2 — Choose a New Plaza Supply Card"
+horizontal_alignment = 1
+
+[node name="DraftSubLabel" type="Label" parent="HUD/DraftModal/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 0.86, 0.9, 1)
+theme_override_font_sizes/font_size = 15
+text = "Select 1 reward package to expand your plaza for the upcoming week:"
+horizontal_alignment = 1
+
+[node name="CardsHBox" type="HBoxContainer" parent="HUD/DraftModal/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="GameOverPanel" type="Control" parent="HUD"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dimmer" type="ColorRect" parent="HUD/GameOverPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.08, 0.05, 0.06, 0.6)
+
+[node name="Panel" type="PanelContainer" parent="HUD/GameOverPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -150.0
+offset_right = 240.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="HUD/GameOverPanel/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="TitleLabel" type="Label" parent="HUD/GameOverPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.45, 0.42, 1)
+theme_override_font_sizes/font_size = 30
+text = "PLAZA CLOSED"
+horizontal_alignment = 1
+
+[node name="ReasonLabel" type="Label" parent="HUD/GameOverPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.85, 0.85, 1)
+theme_override_font_sizes/font_size = 16
+text = "Citizen Happiness dropped to 0%!"
+horizontal_alignment = 1
+
+[node name="FinalScoreLabel" type="Label" parent="HUD/GameOverPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Location: Old Town Square\nDays Survived: 1\nPeak Reputation: 1.00 ★\nHappy Citizens Served: 0"
+horizontal_alignment = 1
+
+[node name="ButtonsHBox" type="HBoxContainer" parent="HUD/GameOverPanel/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="RestartButton" type="Button" parent="HUD/GameOverPanel/Panel/VBox/ButtonsHBox"]
+custom_minimum_size = Vector2(160, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Play Again"
+
+[node name="MainMenuButton" type="Button" parent="HUD/GameOverPanel/Panel/VBox/ButtonsHBox"]
+custom_minimum_size = Vector2(160, 42)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Main Menu"
+
+[connection signal="pressed" from="HUD/TopBar/RightCard/HBox/SpeedBox/BtnPause" to="." method="_on_speed_pause_pressed"]
+[connection signal="pressed" from="HUD/TopBar/RightCard/HBox/SpeedBox/Btn1x" to="." method="_on_speed_1x_pressed"]
+[connection signal="pressed" from="HUD/TopBar/RightCard/HBox/SpeedBox/Btn15x" to="." method="_on_speed_15x_pressed"]
+[connection signal="pressed" from="HUD/TopBar/RightCard/HBox/SpeedBox/Btn2x" to="." method="_on_speed_2x_pressed"]
+[connection signal="pressed" from="HUD/TopBar/RightCard/HBox/BtnOptions" to="." method="_on_options_button_pressed"]
+[connection signal="pressed" from="HUD/TopBar/RightCard/HBox/BtnMenu" to="." method="_on_menu_button_pressed"]
+[connection signal="pressed" from="HUD/StartMenuPanel/Panel/VBox/PlayButton" to="." method="_on_play_button_pressed"]
+[connection signal="pressed" from="HUD/StartMenuPanel/Panel/VBox/OptionsButton" to="." method="_on_options_button_pressed"]
+[connection signal="pressed" from="HUD/StartMenuPanel/Panel/VBox/QuitButton" to="." method="_on_quit_button_pressed"]
+[connection signal="pressed" from="HUD/LocationSelectPanel/Panel/VBox/ActionsHBox/BackToTitleBtn" to="." method="_on_back_to_title_pressed"]
+[connection signal="pressed" from="HUD/LocationSelectPanel/Panel/VBox/ActionsHBox/StartLocationBtn" to="." method="_on_confirm_location_pressed"]
+[connection signal="value_changed" from="HUD/OptionsPanel/Panel/VBox/BrightnessBox/BrightnessSlider" to="." method="_on_opt_brightness_changed"]
+[connection signal="toggled" from="HUD/OptionsPanel/Panel/VBox/TopDownCheck" to="." method="_on_opt_topdown_toggled"]
+[connection signal="toggled" from="HUD/OptionsPanel/Panel/VBox/DayNightCheck" to="." method="_on_opt_daynight_toggled"]
+[connection signal="value_changed" from="HUD/OptionsPanel/Panel/VBox/PanSpeedBox/PanSpeedSlider" to="." method="_on_opt_panspeed_changed"]
+[connection signal="pressed" from="HUD/OptionsPanel/Panel/VBox/CloseOptButton" to="." method="_on_options_close_pressed"]
+[connection signal="pressed" from="HUD/GameOverPanel/Panel/VBox/ButtonsHBox/RestartButton" to="." method="_on_restart_button_pressed"]
+[connection signal="pressed" from="HUD/GameOverPanel/Panel/VBox/ButtonsHBox/MainMenuButton" to="." method="_on_menu_button_pressed"]
