@@ -74,11 +74,21 @@ var title_wave_letters: Array[Dictionary] = []
 var floating_menu_cards: Array[Dictionary] = []
 var floating_location_cards: Array[Dictionary] = []
 
-var selected_category: int = -1 # -1 = No category expanded yet; 0..5 = FacilityCatalog.Category
+var selected_category: int = -1 # -1 = No category expanded yet; 0..6 = FacilityCatalog.Category
+var signature_page: int = 0
+const SIGNATURE_PAGE_SIZE: int = 6
+var sig_prev_btn: Button = null
+var sig_next_btn: Button = null
 var category_buttons: Dictionary = {} # int -> Button
 var item_buttons: Dictionary = {} # int -> Button
 var staff_buttons: Dictionary = {} # int -> Button
 var deselect_tool_button: Button = null
+
+var facility_tooltip_panel: PanelContainer = null
+var facility_tooltip_title: Label = null
+var facility_tooltip_meta: Label = null
+var facility_tooltip_desc: Label = null
+var facility_tooltip_hint: Label = null
 
 var is_in_match: bool = false
 var is_game_over: bool = false
@@ -100,7 +110,15 @@ var dining_income_mult: float = 1.0
 var queue_patience_mult: float = 1.0
 var last_ledger_summary: String = ""
 
-# Plaza Direction & Archetype Spawn Weights (Modified by Wednesday Facility Upgrades)
+var active_perks: Dictionary = {} # String -> bool
+
+func has_perk(perk_id: String) -> bool:
+	return active_perks.has(perk_id)
+
+func penalize_happiness(amount: float) -> void:
+	_apply_happiness_penalty(amount)
+
+# Plaza Direction & Archetype Spawn Weights (Modified by Thursday Facility Upgrades)
 var unlocked_special_facilities: Dictionary = {} # ItemId -> bool
 var archetype_weights: Dictionary = {
 	PeepAgent.Archetype.NORMAL: 42.0,
@@ -125,6 +143,8 @@ var week_number: int = 1
 var day_index: int = 0 # 0 = MON .. 6 = SUN
 var day_timer: float = 0.0
 var spawn_timer: float = 0.0
+var customer_window_timer: float = 0.0
+var scheduled_customer_arrivals: Array[float] = []
 var station_burst_timer: float = 0.0
 var aura_tick_timer: float = 0.0
 var current_need_weights: Array = [1.0, 1.0, 1.0, 1.0]
@@ -143,6 +163,9 @@ var draft_choices: Array[Dictionary] = []
 var floating_popups: Array[Dictionary] = []
 
 func _ready() -> void:
+	add_to_group("game_director")
+	grid_manager.game_director_ref = self
+
 	staff_container = Node3D.new()
 	staff_container.name = "StaffContainer"
 	add_child(staff_container)
@@ -177,6 +200,84 @@ func _ready() -> void:
 	_set_sim_speed(0.0)
 	_show_start_menu(true)
 
+const ITEM_ICONS: Dictionary = {
+	FacilityCatalog.ItemId.PATH_TILE: "🚶",
+	FacilityCatalog.ItemId.FENCE: "🪵",
+	FacilityCatalog.ItemId.ENTRY_GATE: "🟢",
+	FacilityCatalog.ItemId.EXIT_GATE: "🔴",
+	FacilityCatalog.ItemId.FOOD_SHOP: "🍔",
+	FacilityCatalog.ItemId.DRINK_STALL: "🥤",
+	FacilityCatalog.ItemId.COFFEE_ROASTER: "☕",
+	FacilityCatalog.ItemId.RESTROOM: "🚻",
+	FacilityCatalog.ItemId.INFO_KIOSK: "ℹ️",
+	FacilityCatalog.ItemId.STREET_STAGE: "🎪",
+	FacilityCatalog.ItemId.PICNIC_TABLE: "🧺",
+	FacilityCatalog.ItemId.BENCH: "🪑",
+	FacilityCatalog.ItemId.FLOWER_GARDEN: "🌸",
+	FacilityCatalog.ItemId.DUCK_POND: "🦆",
+	FacilityCatalog.ItemId.TRASHCAN: "🗑️",
+	FacilityCatalog.ItemId.LAMP_POST: "💡",
+	FacilityCatalog.ItemId.STAFF_HOUSE: "🏠",
+	FacilityCatalog.ItemId.GRAND_CLOCKTOWER: "🕰️",
+	FacilityCatalog.ItemId.VINTAGE_CAROUSEL: "🎠",
+	FacilityCatalog.ItemId.FERRIS_WHEEL: "🎡",
+	FacilityCatalog.ItemId.ZEN_SHRINE: "⛩️",
+	FacilityCatalog.ItemId.GOLDEN_MONOLITH: "🍔",
+	FacilityCatalog.ItemId.WISHING_WELL: "⛲",
+	FacilityCatalog.ItemId.CYBER_ARCADE: "🕹️",
+	FacilityCatalog.ItemId.BOTANICAL_DOME: "🌴",
+	FacilityCatalog.ItemId.TRIUMPH_ARCH: "🏛️",
+	FacilityCatalog.ItemId.GELATO_PAVILION: "🍨",
+	FacilityCatalog.ItemId.BIERGARTEN: "🍺",
+	FacilityCatalog.ItemId.PLANETARIUM: "🪐",
+	FacilityCatalog.ItemId.SKATE_BOWL: "🛹",
+	FacilityCatalog.ItemId.SPA_BATHHOUSE: "♨️",
+	FacilityCatalog.ItemId.OBSERVATION_TOWER: "🗼",
+	FacilityCatalog.ItemId.TEA_HOUSE: "🍵",
+	FacilityCatalog.ItemId.ART_OBELISK: "🗿",
+	FacilityCatalog.ItemId.CIRCUS_TENT: "🎪",
+	FacilityCatalog.ItemId.STEAM_TRAIN: "🚂",
+	FacilityCatalog.ItemId.DIAMOND_PAVILION: "💎",
+	FacilityCatalog.ItemId.ERASE_TOOL: "🔨"
+}
+
+const STAFF_ICONS: Dictionary = {
+	FacilityCatalog.StaffId.JANITOR: "🧹",
+	FacilityCatalog.StaffId.PLAZA_STAFF: "🧭",
+	FacilityCatalog.StaffId.SECURITY: "🛡️",
+	FacilityCatalog.StaffId.DRONE: "🤖"
+}
+
+func _make_cozy_pill_stylebox(bg_col: Color, border_col: Color, radius: int = 14) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg_col
+	sb.border_color = border_col
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(radius)
+	sb.shadow_color = Color(0, 0, 0, 0.32)
+	sb.shadow_size = 5
+	sb.shadow_offset = Vector2(0, 2)
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	return sb
+
+func _make_card_stylebox(bg_col: Color, border_col: Color, radius: int = 10) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg_col
+	sb.border_color = border_col
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(radius)
+	sb.shadow_color = Color(0, 0, 0, 0.35)
+	sb.shadow_size = 6
+	sb.shadow_offset = Vector2(0, 3)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	return sb
+
 func _build_categorized_dock_ui() -> void:
 	if not category_tabs_box or not tools_hbox:
 		return
@@ -189,25 +290,45 @@ func _build_categorized_dock_ui() -> void:
 	item_buttons.clear()
 	staff_buttons.clear()
 
-	# Minimal category bar (removed "All")
+	# Floating icon dock for categories
 	var categories_meta: Array[Dictionary] = [
-		{"id": FacilityCatalog.Category.PATH, "label": "Path"},
-		{"id": FacilityCatalog.Category.DINING, "label": "Dining"},
-		{"id": FacilityCatalog.Category.SERVICE, "label": "Service"},
-		{"id": FacilityCatalog.Category.COMFORT, "label": "Comfort"},
-		{"id": FacilityCatalog.Category.UTILITY, "label": "Utility"},
-		{"id": FacilityCatalog.Category.STAFF, "label": "Staff"}
+		{"id": FacilityCatalog.Category.PATH, "label": "🚶 Path"},
+		{"id": FacilityCatalog.Category.DINING, "label": "🍔 Dining"},
+		{"id": FacilityCatalog.Category.SERVICE, "label": "🎪 Service"},
+		{"id": FacilityCatalog.Category.COMFORT, "label": "🌸 Comfort"},
+		{"id": FacilityCatalog.Category.UTILITY, "label": "💡 Utility"},
+		{"id": FacilityCatalog.Category.SIGNATURE, "label": "✨ Signature"},
+		{"id": FacilityCatalog.Category.STAFF, "label": "👷 Staff"}
 	]
 
 	for cat in categories_meta:
 		var cid: int = int(cat["id"])
 		var cbtn := Button.new()
-		cbtn.custom_minimum_size = Vector2(96, 32)
+		cbtn.custom_minimum_size = Vector2(98, 36)
 		cbtn.focus_mode = Control.FOCUS_NONE
+		cbtn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		cbtn.text = str(cat["label"])
+
+		var normal_sb := _make_cozy_pill_stylebox(Color("1e1b18", 0.90), Color("78716c", 0.40), 16)
+		var hover_sb := _make_cozy_pill_stylebox(Color("292524", 0.96), Color("facc15", 0.85), 16)
+		cbtn.add_theme_stylebox_override("normal", normal_sb)
+		cbtn.add_theme_stylebox_override("hover", hover_sb)
+		cbtn.add_theme_stylebox_override("focus", hover_sb)
+		cbtn.add_theme_font_size_override("font_size", 13)
+
 		cbtn.pressed.connect(func() -> void: _select_dock_category(cid))
 		category_tabs_box.add_child(cbtn)
 		category_buttons[cid] = cbtn
+
+	sig_prev_btn = Button.new()
+	sig_prev_btn.text = "◀"
+	sig_prev_btn.custom_minimum_size = Vector2(40, 94)
+	sig_prev_btn.focus_mode = Control.FOCUS_NONE
+	sig_prev_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var pg_sb := _make_card_stylebox(Color(0.20, 0.18, 0.24, 0.95), Color(0.95, 0.80, 0.35, 0.55), 10)
+	sig_prev_btn.add_theme_stylebox_override("normal", pg_sb)
+	sig_prev_btn.pressed.connect(func() -> void: _change_signature_page(-1))
+	tools_hbox.add_child(sig_prev_btn)
 
 	var build_order: Array[int] = [
 		FacilityCatalog.ItemId.PATH_TILE,
@@ -216,47 +337,342 @@ func _build_categorized_dock_ui() -> void:
 		FacilityCatalog.ItemId.EXIT_GATE,
 		FacilityCatalog.ItemId.FOOD_SHOP,
 		FacilityCatalog.ItemId.DRINK_STALL,
-		FacilityCatalog.ItemId.COFFEE_ROASTER,
 		FacilityCatalog.ItemId.RESTROOM,
 		FacilityCatalog.ItemId.INFO_KIOSK,
-		FacilityCatalog.ItemId.STREET_STAGE,
 		FacilityCatalog.ItemId.PICNIC_TABLE,
 		FacilityCatalog.ItemId.BENCH,
-		FacilityCatalog.ItemId.FLOWER_GARDEN,
-		FacilityCatalog.ItemId.DUCK_POND,
 		FacilityCatalog.ItemId.TRASHCAN,
 		FacilityCatalog.ItemId.LAMP_POST,
-		FacilityCatalog.ItemId.ERASE_TOOL
+		FacilityCatalog.ItemId.STAFF_HOUSE,
+		FacilityCatalog.ItemId.ERASE_TOOL,
+		# 24 Signature Landmarks (Max 1 per Park)
+		FacilityCatalog.ItemId.FLOWER_GARDEN,
+		FacilityCatalog.ItemId.DUCK_POND,
+		FacilityCatalog.ItemId.COFFEE_ROASTER,
+		FacilityCatalog.ItemId.STREET_STAGE,
+		FacilityCatalog.ItemId.GRAND_CLOCKTOWER,
+		FacilityCatalog.ItemId.VINTAGE_CAROUSEL,
+		FacilityCatalog.ItemId.FERRIS_WHEEL,
+		FacilityCatalog.ItemId.ZEN_SHRINE,
+		FacilityCatalog.ItemId.GOLDEN_MONOLITH,
+		FacilityCatalog.ItemId.WISHING_WELL,
+		FacilityCatalog.ItemId.CYBER_ARCADE,
+		FacilityCatalog.ItemId.BOTANICAL_DOME,
+		FacilityCatalog.ItemId.TRIUMPH_ARCH,
+		FacilityCatalog.ItemId.GELATO_PAVILION,
+		FacilityCatalog.ItemId.BIERGARTEN,
+		FacilityCatalog.ItemId.PLANETARIUM,
+		FacilityCatalog.ItemId.SKATE_BOWL,
+		FacilityCatalog.ItemId.SPA_BATHHOUSE,
+		FacilityCatalog.ItemId.OBSERVATION_TOWER,
+		FacilityCatalog.ItemId.TEA_HOUSE,
+		FacilityCatalog.ItemId.ART_OBELISK,
+		FacilityCatalog.ItemId.CIRCUS_TENT,
+		FacilityCatalog.ItemId.STEAM_TRAIN,
+		FacilityCatalog.ItemId.DIAMOND_PAVILION
 	]
 
 	for item_id in build_order:
 		var info := FacilityCatalog.get_item(item_id)
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(108, 42)
+		btn.custom_minimum_size = Vector2(92, 94)
 		btn.focus_mode = Control.FOCUS_NONE
+		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		btn.text = ""
+
+		var card_sb := _make_card_stylebox(Color(0.18, 0.17, 0.20, 0.95), Color(0.55, 0.50, 0.45, 0.40), 10)
+		var card_h_sb := _make_card_stylebox(Color(0.24, 0.22, 0.26, 0.98), Color(0.98, 0.82, 0.35, 0.90), 10)
+		btn.add_theme_stylebox_override("normal", card_sb)
+		btn.add_theme_stylebox_override("hover", card_h_sb)
+		btn.add_theme_stylebox_override("focus", card_h_sb)
+
+		var card_vbox := VBoxContainer.new()
+		card_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		card_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		card_vbox.add_theme_constant_override("separation", 2)
+
+		var icon_lbl := Label.new()
+		icon_lbl.text = str(ITEM_ICONS.get(item_id, "🏛"))
+		icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		icon_lbl.add_theme_font_size_override("font_size", 22)
+		icon_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_vbox.add_child(icon_lbl)
+
+		var name_lbl := Label.new()
+		name_lbl.name = "NameLabel"
+		name_lbl.text = str(info["name"])
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_lbl.add_theme_font_size_override("font_size", 11)
+		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_vbox.add_child(name_lbl)
+
+		var size_vec: Vector2i = FacilityCatalog.get_facility_size(item_id)
+		if size_vec.x > 1 or size_vec.y > 1:
+			var size_badge := Label.new()
+			size_badge.text = "[%d×%d]" % [size_vec.x, size_vec.y]
+			size_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			size_badge.add_theme_font_size_override("font_size", 9)
+			size_badge.add_theme_color_override("font_color", Color("38bdf8"))
+			size_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			card_vbox.add_child(size_badge)
+
+		var cost_lbl := Label.new()
+		cost_lbl.name = "CostLabel"
+		cost_lbl.text = ""
+		cost_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cost_lbl.add_theme_font_size_override("font_size", 11)
+		cost_lbl.add_theme_color_override("font_color", Color("fbbf24"))
+		cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_vbox.add_child(cost_lbl)
+
+		btn.add_child(card_vbox)
+
 		var iid := item_id
 		btn.pressed.connect(func() -> void: _select_build_tool(iid))
+		btn.mouse_entered.connect(func() -> void: _show_card_detail_tooltip(iid))
+		btn.mouse_exited.connect(func() -> void: _hide_card_detail_tooltip())
+
 		tools_hbox.add_child(btn)
 		item_buttons[item_id] = btn
 
-	for staff_id in [FacilityCatalog.StaffId.JANITOR, FacilityCatalog.StaffId.PLAZA_STAFF, FacilityCatalog.StaffId.SECURITY]:
+	sig_next_btn = Button.new()
+	sig_next_btn.text = "▶"
+	sig_next_btn.custom_minimum_size = Vector2(40, 94)
+	sig_next_btn.focus_mode = Control.FOCUS_NONE
+	sig_next_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	sig_next_btn.add_theme_stylebox_override("normal", pg_sb)
+	sig_next_btn.pressed.connect(func() -> void: _change_signature_page(1))
+	tools_hbox.add_child(sig_next_btn)
+
+	for staff_id in [FacilityCatalog.StaffId.JANITOR, FacilityCatalog.StaffId.PLAZA_STAFF, FacilityCatalog.StaffId.SECURITY, FacilityCatalog.StaffId.DRONE]:
 		var sid: int = int(staff_id)
+		var sinfo := FacilityCatalog.get_staff_info(staff_id)
 		var sbtn := Button.new()
-		sbtn.custom_minimum_size = Vector2(124, 42)
+		sbtn.custom_minimum_size = Vector2(98, 94)
 		sbtn.focus_mode = Control.FOCUS_NONE
+		sbtn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		sbtn.text = ""
+
+		var scard_sb := _make_card_stylebox(Color(0.18, 0.17, 0.20, 0.95), Color(0.55, 0.50, 0.45, 0.40), 10)
+		var scard_h_sb := _make_card_stylebox(Color(0.24, 0.22, 0.26, 0.98), Color(0.98, 0.82, 0.35, 0.90), 10)
+		sbtn.add_theme_stylebox_override("normal", scard_sb)
+		sbtn.add_theme_stylebox_override("hover", scard_h_sb)
+		sbtn.add_theme_stylebox_override("focus", scard_h_sb)
+
+		var scard_vbox := VBoxContainer.new()
+		scard_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		scard_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		scard_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		scard_vbox.add_theme_constant_override("separation", 2)
+
+		var sicon_lbl := Label.new()
+		sicon_lbl.text = str(STAFF_ICONS.get(staff_id, "👷"))
+		sicon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sicon_lbl.add_theme_font_size_override("font_size", 22)
+		sicon_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		scard_vbox.add_child(sicon_lbl)
+
+		var sname_lbl := Label.new()
+		sname_lbl.name = "NameLabel"
+		sname_lbl.text = str(sinfo["name"])
+		sname_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sname_lbl.add_theme_font_size_override("font_size", 11)
+		sname_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		scard_vbox.add_child(sname_lbl)
+
+		var count_lbl := Label.new()
+		count_lbl.name = "CountLabel"
+		count_lbl.text = "Count: 0"
+		count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		count_lbl.add_theme_font_size_override("font_size", 10)
+		count_lbl.add_theme_color_override("font_color", Color("93c5fd"))
+		count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		scard_vbox.add_child(count_lbl)
+
+		var wage_lbl := Label.new()
+		wage_lbl.name = "WageLabel"
+		wage_lbl.text = ""
+		wage_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		wage_lbl.add_theme_font_size_override("font_size", 11)
+		wage_lbl.add_theme_color_override("font_color", Color("fbbf24"))
+		wage_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		scard_vbox.add_child(wage_lbl)
+
+		sbtn.add_child(scard_vbox)
+
 		sbtn.pressed.connect(func() -> void: hire_staff(sid))
+		sbtn.mouse_entered.connect(func() -> void: _show_staff_detail_tooltip(sid))
+		sbtn.mouse_exited.connect(func() -> void: _hide_card_detail_tooltip())
+
 		tools_hbox.add_child(sbtn)
 		staff_buttons[sid] = sbtn
 
 	deselect_tool_button = Button.new()
 	deselect_tool_button.text = "✕ Done"
-	deselect_tool_button.custom_minimum_size = Vector2(92, 42)
+	deselect_tool_button.custom_minimum_size = Vector2(84, 94)
 	deselect_tool_button.focus_mode = Control.FOCUS_NONE
-	deselect_tool_button.modulate = Color(1.0, 0.72, 0.72)
+	deselect_tool_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var d_sb := _make_card_stylebox(Color(0.24, 0.16, 0.18, 0.95), Color(0.85, 0.45, 0.45, 0.60), 10)
+	deselect_tool_button.add_theme_stylebox_override("normal", d_sb)
+	deselect_tool_button.add_theme_color_override("font_color", Color("fca5a5"))
 	deselect_tool_button.pressed.connect(func() -> void: _select_build_tool(-1))
 	tools_hbox.add_child(deselect_tool_button)
 
+	_ensure_facility_tooltip()
 	_select_dock_category(-1)
+
+func _ensure_facility_tooltip() -> void:
+	if is_instance_valid(facility_tooltip_panel):
+		return
+	if not bottom_dock:
+		return
+	var vbox := bottom_dock.get_node_or_null("VBox") as VBoxContainer
+	if not vbox:
+		return
+
+	facility_tooltip_panel = PanelContainer.new()
+	facility_tooltip_panel.name = "FacilityTooltip"
+	facility_tooltip_panel.visible = false
+
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.09, 0.11, 0.96)
+	sb.border_color = Color(0.96, 0.78, 0.35, 0.75)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(12)
+	sb.shadow_color = Color(0, 0, 0, 0.45)
+	sb.shadow_size = 10
+	sb.shadow_offset = Vector2(0, 3)
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	facility_tooltip_panel.add_theme_stylebox_override("panel", sb)
+
+	var tbox := VBoxContainer.new()
+	tbox.add_theme_constant_override("separation", 2)
+	facility_tooltip_panel.add_child(tbox)
+
+	var hbox_top := HBoxContainer.new()
+	hbox_top.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox_top.add_theme_constant_override("separation", 12)
+	tbox.add_child(hbox_top)
+
+	facility_tooltip_title = Label.new()
+	facility_tooltip_title.add_theme_font_size_override("font_size", 14)
+	facility_tooltip_title.add_theme_color_override("font_color", Color("fef08a"))
+	hbox_top.add_child(facility_tooltip_title)
+
+	facility_tooltip_meta = Label.new()
+	facility_tooltip_meta.add_theme_font_size_override("font_size", 12)
+	facility_tooltip_meta.add_theme_color_override("font_color", Color("93c5fd"))
+	hbox_top.add_child(facility_tooltip_meta)
+
+	facility_tooltip_desc = Label.new()
+	facility_tooltip_desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	facility_tooltip_desc.add_theme_font_size_override("font_size", 12)
+	facility_tooltip_desc.add_theme_color_override("font_color", Color("e2e8f0"))
+	tbox.add_child(facility_tooltip_desc)
+
+	facility_tooltip_hint = Label.new()
+	facility_tooltip_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	facility_tooltip_hint.add_theme_font_size_override("font_size", 11)
+	facility_tooltip_hint.add_theme_color_override("font_color", Color("a7f3d0"))
+	tbox.add_child(facility_tooltip_hint)
+
+	vbox.add_child(facility_tooltip_panel)
+	vbox.move_child(facility_tooltip_panel, 0)
+	if tools_hbox:
+		vbox.move_child(tools_hbox, 1)
+	if category_tabs_box:
+		vbox.move_child(category_tabs_box, 2)
+	if hint_label:
+		vbox.move_child(hint_label, 3)
+
+func _show_card_detail_tooltip(item_id: int) -> void:
+	_ensure_facility_tooltip()
+	if not facility_tooltip_panel:
+		return
+
+	var info := FacilityCatalog.get_item(item_id)
+	var size_vec: Vector2i = FacilityCatalog.get_facility_size(item_id)
+	var size_str := "%d×%d Landmark" % [size_vec.x, size_vec.y] if (size_vec.x > 1 or size_vec.y > 1) else "1×1 Tile"
+	var is_sig := FacilityCatalog.is_signature_item(item_id)
+	var sig_badge := "  •  ✨ Max 1 in Park" if is_sig else ""
+	var icon: String = str(ITEM_ICONS.get(item_id, "🏛"))
+
+	facility_tooltip_title.text = "%s %s  [%s%s]" % [icon, info["name"], size_str, sig_badge]
+
+	var cost := grid_manager.get_item_cost(item_id)
+	var vouchers := int(grid_manager.inventory.get(item_id, 0))
+	var cost_str := "x%d Free Vouchers" % vouchers if vouchers > 0 else FacilityCatalog.format_money(cost)
+	if is_sig and grid_manager.has_facility_of_type(item_id):
+		cost_str = "Built (1/1 in Park)"
+
+	var meta_parts: Array[String] = ["💰 %s" % cost_str]
+	var inc := int(info.get("income", 0))
+	if inc > 0:
+		meta_parts.append("💵 +%s/patron" % FacilityCatalog.format_money(inc))
+	var upkeep := int(info.get("upkeep", 0))
+	if upkeep > 0:
+		meta_parts.append("🔧 Upkeep: -%s/day" % FacilityCatalog.format_money(upkeep))
+	var cap := int(info.get("capacity", 0))
+	if cap > 0:
+		meta_parts.append("👥 Queue: %d" % cap)
+	var st := float(info.get("service_time", 0.0))
+	if st > 0.0:
+		meta_parts.append("⏱️ %0.1fs" % st)
+
+	facility_tooltip_meta.text = "   •   ".join(meta_parts)
+
+	var ben_str := str(info.get("benefit", ""))
+	var dis_str := str(info.get("disadvantage", ""))
+	if not ben_str.is_empty() or not dis_str.is_empty():
+		facility_tooltip_desc.text = "%s\n%s" % [ben_str, dis_str]
+	else:
+		facility_tooltip_desc.text = str(info.get("summary", ""))
+
+	if grid_manager.is_placeable_facility_tool(item_id):
+		if is_sig and grid_manager.has_facility_of_type(item_id):
+			facility_tooltip_hint.text = "✨ Signature Limit Reached (1/1)  •  Demolish existing copy to relocate"
+		else:
+			facility_tooltip_hint.text = "💡 Press [Q] / [E] to rotate entrance  •  Left-click to place"
+		facility_tooltip_hint.visible = true
+	else:
+		facility_tooltip_hint.visible = false
+
+	facility_tooltip_panel.visible = true
+
+func _show_staff_detail_tooltip(staff_id: int) -> void:
+	_ensure_facility_tooltip()
+	if not facility_tooltip_panel:
+		return
+
+	var sinfo := FacilityCatalog.get_staff_info(staff_id)
+	var icon: String = str(STAFF_ICONS.get(staff_id, "👷"))
+	facility_tooltip_title.text = "%s %s" % [icon, sinfo["name"]]
+
+	var scaled_wage := roundi(float(sinfo.get("daily_wage", 1000)) * staff_wage_multiplier)
+	var hire_cost := int(sinfo.get("hire_cost", 1000))
+	facility_tooltip_meta.text = "💰 Hire: %s   •   💵 Wage: %s/day" % [
+		FacilityCatalog.format_money(hire_cost),
+		FacilityCatalog.format_money(scaled_wage)
+	]
+	facility_tooltip_desc.text = str(sinfo.get("summary", ""))
+	facility_tooltip_hint.text = "💡 Click card to recruit staff member"
+	facility_tooltip_hint.visible = true
+	facility_tooltip_panel.visible = true
+
+func _hide_card_detail_tooltip() -> void:
+	if is_instance_valid(facility_tooltip_panel):
+		facility_tooltip_panel.visible = false
+
+func _change_signature_page(delta_page: int) -> void:
+	var sig_ids := FacilityCatalog.get_signature_item_ids()
+	var total_pages := maxi(1, int(ceil(float(sig_ids.size()) / float(SIGNATURE_PAGE_SIZE))))
+	signature_page = posmod(signature_page + delta_page, total_pages)
+	_hide_card_detail_tooltip()
+	_update_dock_ui()
 
 func _select_dock_category(cat_id: int) -> void:
 	if cat_id >= 0 and selected_category == cat_id:
@@ -265,11 +681,20 @@ func _select_dock_category(cat_id: int) -> void:
 		grid_manager.set_build_tool(-1)
 	else:
 		selected_category = cat_id
+
 	for cid in category_buttons.keys():
 		var btn: Button = category_buttons[cid]
-		btn.modulate = Color(1.0, 0.90, 0.55) if cid == selected_category else Color(0.88, 0.90, 0.94)
+		var is_active: bool = (int(cid) == selected_category)
+		var bg_col := Color("d97706") if is_active else Color("1e1b18", 0.90)
+		var border_col := Color("fef08a") if is_active else Color("78716c", 0.40)
+		var active_sb := _make_cozy_pill_stylebox(bg_col, border_col, 16)
+		btn.add_theme_stylebox_override("normal", active_sb)
+		btn.add_theme_color_override("font_color", Color.WHITE if is_active else Color(0.92, 0.90, 0.88))
+
 	if tools_hbox:
 		tools_hbox.visible = (selected_category >= 0)
+
+	_hide_card_detail_tooltip()
 	_update_dock_ui()
 
 func _update_bottom_dock_hover() -> void:
@@ -279,27 +704,8 @@ func _update_bottom_dock_hover() -> void:
 		bottom_dock.visible = false
 		return
 
-	# When player has selected a facility to place, the menu stays appeared until unselected!
-	var has_selected_tool := (grid_manager.current_tool >= 0)
-	if has_selected_tool:
-		bottom_dock.visible = true
-		return
-
-	var vp_rect := get_viewport().get_visible_rect()
-	var mouse_pos := get_viewport().get_mouse_position()
-	var dist_from_bottom := vp_rect.size.y - mouse_pos.y
-
-	if not bottom_dock.visible:
-		# Hidden by default: appear when mouse moves down to the bottom edge
-		if dist_from_bottom >= 0.0 and dist_from_bottom <= 78.0:
-			bottom_dock.visible = true
-	else:
-		# Keep visible while mouse stays in the bottom dock area; hide when mouse moves away
-		var keep_height := 158.0 if selected_category >= 0 else 96.0
-		var dock_rect := bottom_dock.get_global_rect().grow(24.0)
-		if dist_from_bottom > keep_height and not dock_rect.has_point(mouse_pos):
-			bottom_dock.visible = false
-			_select_dock_category(-1)
+	# Cozy dock remains always visible during active match!
+	bottom_dock.visible = true
 
 func _create_styled_logo_font(embolden: float = 0.52, slant: float = 0.14) -> FontVariation:
 	var sys_font := SystemFont.new()
@@ -709,7 +1115,7 @@ func _select_location_preview(index: int) -> void:
 	_clear_all_peeps()
 	_clear_all_staff()
 	registered_stalls.clear()
-	grid_manager.apply_location_scenario(loc)
+	grid_manager.apply_location_scenario(loc, false)
 	left_entrance_coords = Vector2i(-grid_manager.grid_half_width, 0)
 	right_entrance_coords = Vector2i(grid_manager.grid_half_width, 0)
 	camera_rig.configure_for_map_size(grid_manager.grid_half_width, grid_manager.grid_half_height)
@@ -885,11 +1291,17 @@ func _process(delta: float) -> void:
 	var day_progress := clampf(day_timer / day_duration_seconds, 0.0, 1.0)
 	day_night_cycle.update_time_of_day(day_progress)
 
-	var current_interval := get_current_spawn_interval()
-	spawn_timer += sim_delta
-	if spawn_timer >= current_interval:
-		spawn_timer -= current_interval
-		_spawn_customer_set()
+	customer_window_timer += sim_delta
+
+	# Spawn any scheduled arrivals whose time has arrived in the 10-second window
+	while not scheduled_customer_arrivals.is_empty() and scheduled_customer_arrivals[0] <= customer_window_timer:
+		scheduled_customer_arrivals.pop_front()
+		_spawn_single_customer()
+
+	# When the 10-second window completes, wrap timer and schedule the next window
+	if customer_window_timer >= 10.0:
+		customer_window_timer -= 10.0
+		_schedule_10s_customer_arrivals()
 
 	var loc: Dictionary = locations_list[selected_location_index]
 	var st_cfg: Dictionary = loc.get("station", {})
@@ -978,7 +1390,7 @@ func start_new_game() -> void:
 	_clear_all_staff()
 	_clear_floating_popups()
 	registered_stalls.clear()
-	grid_manager.apply_location_scenario(loc)
+	grid_manager.apply_location_scenario(loc, true)
 	left_entrance_coords = Vector2i(-grid_manager.grid_half_width, 0)
 	right_entrance_coords = Vector2i(grid_manager.grid_half_width, 0)
 	camera_rig.configure_for_map_size(grid_manager.grid_half_width, grid_manager.grid_half_height)
@@ -1004,6 +1416,10 @@ func start_new_game() -> void:
 	queue_patience_mult = 1.0
 	last_ledger_summary = ""
 
+	active_perks.clear()
+	if grid_manager and grid_manager.path_network:
+		grid_manager.path_network.max_people_per_tile = 10
+
 	unlocked_special_facilities.clear()
 	archetype_weights = {
 		PeepAgent.Archetype.NORMAL: 42.0,
@@ -1028,6 +1444,8 @@ func start_new_game() -> void:
 	var start_progress := float(loc.get("start_time", 0.05))
 	day_timer = start_progress * day_duration_seconds
 	spawn_timer = 0.0
+	customer_window_timer = 0.0
+	_schedule_10s_customer_arrivals()
 	station_burst_timer = 0.0
 
 	start_menu_panel.visible = false
@@ -1234,12 +1652,31 @@ func get_daily_staff_payroll() -> int:
 			continue
 		var info := FacilityCatalog.get_staff_info(int(stf.staff_type))
 		total += int(info.get("daily_wage", 1000))
-	return roundi(float(total) * staff_wage_multiplier)
+	var wage_mult := staff_wage_multiplier
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.DIAMOND_PAVILION):
+		wage_mult *= 1.25 # Diamond Hall Disadvantage: Staff daily wages +25%
+	var payroll := roundi(float(total) * wage_mult)
+
+	# Include daily upkeep from active Signature Landmarks (Carousel, Ferris Wheel, Botanical Dome, Spa, Steam Train, etc.)
+	var landmark_upkeep := 0
+	for stall in registered_stalls:
+		if is_instance_valid(stall):
+			var s_info := FacilityCatalog.get_item(stall.stall_type)
+			landmark_upkeep += int(s_info.get("upkeep", 0))
+	return payroll + landmark_upkeep
 
 func calculate_daily_city_grant() -> int:
 	var loc: Dictionary = locations_list[selected_location_index]
 	var mult := float(loc.get("grant_multiplier", 1.0)) * city_grant_multiplier
-	var base_grant := 7000.0 + 3000.0 * (reputation - 1.0)
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.TRIUMPH_ARCH):
+		mult *= 1.35 # Triumph Arch Benefit: +35% daily City Grant
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.DIAMOND_PAVILION):
+		mult *= 1.20 # Diamond Hall Benefit: +20% daily City Grant
+	var base_grant := 10000.0 + 4000.0 * (reputation - 1.0)
+	if has_perk("fun_run_route"):
+		base_grant += 5000.0
+	if day_index == 6 and has_perk("micro_mobility"):
+		base_grant += 10000.0
 	var hap_factor := pow(clampf(happiness / 100.0, 0.0, 1.0), 1.25)
 	var raw_grant := base_grant * hap_factor * mult
 	return roundi(raw_grant)
@@ -1259,9 +1696,23 @@ func _calculate_end_of_day_happiness() -> float:
 	if total_trash > 0:
 		cleanliness_mod = maxf(-25.0, 8.0 - float(total_trash) * 3.5)
 
+	# If All-Night Lantern Festival perk is active without sufficient lighting, penalize
+	if has_perk("all_night_lantern"):
+		var has_lamps := false
+		for stall in registered_stalls:
+			if is_instance_valid(stall) and stall.is_lamp_post():
+				has_lamps = true
+				break
+		if not has_lamps:
+			cleanliness_mod -= 20.0
+
 	# Civic care: lost citizens successfully guided and staff assistance
 	var civic_bonus := clampf(float(day_lost_guided) * 1.5 + float(day_patrons_served) * 0.15, 0.0, 10.0)
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.BOTANICAL_DOME):
+		civic_bonus += 3.0 # Botanical Dome Benefit: +3 daily Plaza Happiness
 	var overload_penalty := clampf(float(day_stalls_overloaded) * 4.0, 0.0, 20.0)
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.ZEN_SHRINE):
+		overload_penalty *= 0.60 # Zen Shrine Benefit: Cuts happiness penalties by 40%
 
 	var day_score := satisfaction_score + cleanliness_mod + civic_bonus - overload_penalty
 	day_score = clampf(day_score, 0.0, 100.0)
@@ -1285,6 +1736,9 @@ func _calculate_end_of_day_reputation_delta(end_day_happiness: float) -> float:
 		delta = -0.08
 	else:
 		delta = -0.18
+
+	if has_perk("viral_campaign") and end_day_happiness >= 70.0:
+		delta += 0.50
 	return delta
 
 func _advance_day() -> void:
@@ -1342,81 +1796,89 @@ func _advance_day() -> void:
 		day_index = 0
 		week_number += 1
 
+	# Monday of Week 2+ (Weekly Expansion & Monday Gate appearance)
+	if day_index == 0 and week_number > 1:
+		if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.TRIUMPH_ARCH):
+			reputation += 0.20
+			peak_reputation = maxf(peak_reputation, reputation)
+		grid_manager.expand_location_height()
+		camera_rig.configure_for_map_size(grid_manager.grid_half_width, grid_manager.grid_half_height)
+		var gates_to_spawn := 1
+		var rep_bonus := maxf(0.0, reputation - 1.0)
+		while rep_bonus >= 2.0:
+			if randf() < 0.60:
+				gates_to_spawn += 1
+			rep_bonus -= 2.0
+		if rep_bonus > 0.0 and randf() < (rep_bonus / 2.0) * 0.50:
+			gates_to_spawn += 1
+
+		var spawned_gates := grid_manager.spawn_monday_gates(gates_to_spawn)
+		_spawn_floating_cash_popup(Vector3(0.0, 2.0, 0.0), "🚪 Weekly Expansion: +%d Gate(s)" % spawned_gates.size(), Color("65f085"))
+
 	# Weekly Schedule:
-	# - Wednesday (day_index == 2): Facility Direction Upgrade (ONLY 2 choices; shapes facilities & customer types)
+	# - Thursday (day_index == 3): Facility Upgrade Day (Choose 1 of 2 New Facilities)
 	# - Sunday Morning (day_index == 6): Perk Selection (Benefit + Disadvantage trade-off cards)
-	if day_index == 2:
-		_trigger_wednesday_facility_upgrade()
+	if day_index == 3:
+		_trigger_facility_upgrade_day()
 	elif day_index == 6:
 		_trigger_sunday_perk_draft()
 
 	_update_stats_ui()
 	_update_clock_ui()
 
-func _trigger_wednesday_facility_upgrade() -> void:
+func _trigger_facility_upgrade_day() -> void:
 	is_drafting = true
 	last_unpaused_speed = sim_speed if sim_speed > 0.0 else 1.0
 	_set_sim_speed(0.0)
 	grid_manager.interaction_enabled = false
 
-	draft_title_label.text = "🌿 Wednesday Plaza Upgrade — Choose 1 of 2 New Facilities"
+	draft_title_label.text = "🏛 Facility Upgrade Day — Choose 1 of 2 Signature Landmarks"
 	draft_choices.clear()
 
-	var pair_nature: Array[Dictionary] = [
-		{
-			"type": "facility_upgrade",
-			"name": "🌸 Flower Garden",
-			"category_badge": "COMFORT LANDMARK (+1 Free)",
-			"benefit_line": "👥 Elders visit the plaza much more often (+120%)",
-			"impact_line": "🪑 All Comfort facilities rest visitors 30% faster",
-			"accent": Color("d96b8a"),
-			"item": FacilityCatalog.ItemId.FLOWER_GARDEN,
-			"count": 1,
-			"archetype_mults": {PeepAgent.Archetype.ELDER: 2.2},
-			"comfort_speed_mult": 1.30
-		},
-		{
-			"type": "facility_upgrade",
-			"name": "🦆 Duck Pond",
-			"category_badge": "COMFORT LANDMARK (+1 Free)",
-			"benefit_line": "👥 Couples & Kids visit the plaza much more often (+100%)",
-			"impact_line": "🧭 Calms nearby visitors & prevents getting lost",
-			"accent": Color("4a9eba"),
-			"item": FacilityCatalog.ItemId.DUCK_POND,
-			"count": 1,
-			"archetype_mults": {PeepAgent.Archetype.COUPLE: 2.0, PeepAgent.Archetype.CHILD: 2.0}
-		}
-	]
+	var sig_ids := FacilityCatalog.get_signature_item_ids()
+	var unbuilt_sigs: Array[int] = []
+	for sid in sig_ids:
+		if not grid_manager.has_facility_of_type(sid) and int(grid_manager.inventory.get(sid, 0)) <= 0:
+			unbuilt_sigs.append(sid)
+	if unbuilt_sigs.size() < 2:
+		unbuilt_sigs = sig_ids.duplicate()
+	unbuilt_sigs.shuffle()
 
-	var pair_culture: Array[Dictionary] = [
-		{
-			"type": "facility_upgrade",
-			"name": "☕ Coffee Roaster",
-			"category_badge": "DINING LANDMARK (+1 Free)",
-			"benefit_line": "👥 Business visitors come to the plaza more often (+120%)",
-			"impact_line": "💰 All Dining facilities earn +30% more income",
-			"accent": Color("b8643e"),
-			"item": FacilityCatalog.ItemId.COFFEE_ROASTER,
-			"count": 1,
-			"archetype_mults": {PeepAgent.Archetype.BUSINESS: 2.2},
-			"dining_income_mult": 1.30
-		},
-		{
-			"type": "facility_upgrade",
-			"name": "🎸 Street Stage",
-			"category_badge": "SERVICE LANDMARK (+1 Free)",
-			"benefit_line": "👥 Couples & Normal citizens visit more often (+80%)",
-			"impact_line": "⏳ All facility queues gain +35% visitor patience",
-			"accent": Color("8e57b8"),
-			"item": FacilityCatalog.ItemId.STREET_STAGE,
-			"count": 1,
-			"archetype_mults": {PeepAgent.Archetype.COUPLE: 1.8, PeepAgent.Archetype.NORMAL: 1.5},
-			"queue_patience_mult": 1.35
-		}
+	var accent_palette: Array[Color] = [
+		Color("d96b8a"), Color("4a9eba"), Color("b8643e"), Color("8e57b8"),
+		Color("d98a3b"), Color("3a8f4c"), Color("3a7ec9"), Color("c45b4a")
 	]
+	var chosen_pair: Array[Dictionary] = []
+	for i in range(mini(2, unbuilt_sigs.size())):
+		var sid: int = unbuilt_sigs[i]
+		var info := FacilityCatalog.get_item(sid)
+		var icon_str: String = str(ITEM_ICONS.get(sid, "🏛"))
+		var size_vec: Vector2i = FacilityCatalog.get_facility_size(sid)
+		var size_lbl := "%d×%d" % [size_vec.x, size_vec.y]
+		var card_dict: Dictionary = {
+			"type": "facility_upgrade",
+			"name": "%s %s" % [icon_str, str(info.get("name", "Landmark"))],
+			"category_badge": "SIGNATURE LANDMARK (%s • +1 Free)" % size_lbl,
+			"benefit_line": str(info.get("benefit", "")),
+			"disadvantage_line": str(info.get("disadvantage", "")),
+			"accent": accent_palette[(sid + i) % accent_palette.size()],
+			"item": sid,
+			"count": 1
+		}
+		if sid == FacilityCatalog.ItemId.FLOWER_GARDEN:
+			card_dict["archetype_mults"] = {PeepAgent.Archetype.ELDER: 2.2}
+			card_dict["comfort_speed_mult"] = 1.30
+		elif sid == FacilityCatalog.ItemId.DUCK_POND:
+			card_dict["archetype_mults"] = {PeepAgent.Archetype.COUPLE: 2.0, PeepAgent.Archetype.CHILD: 2.0}
+		elif sid == FacilityCatalog.ItemId.COFFEE_ROASTER:
+			card_dict["archetype_mults"] = {PeepAgent.Archetype.BUSINESS: 2.2}
+			card_dict["dining_income_mult"] = 1.30
+		elif sid == FacilityCatalog.ItemId.STREET_STAGE:
+			card_dict["archetype_mults"] = {PeepAgent.Archetype.COUPLE: 1.8, PeepAgent.Archetype.NORMAL: 1.5}
+			card_dict["queue_patience_mult"] = 1.35
+		chosen_pair.append(card_dict)
 
-	var chosen_pair := pair_nature if (week_number % 2 == 1) else pair_culture
-	# Only 2 choices on Wednesday!
+	# Only 2 choices on Facility Upgrade Day!
 	_present_styled_draft_cards(chosen_pair, 2)
 
 func _trigger_sunday_perk_draft() -> void:
@@ -1429,7 +1891,9 @@ func _trigger_sunday_perk_draft() -> void:
 	draft_choices.clear()
 
 	var perk_pool: Array[Dictionary] = [
+		# 1-5 Base Trade-Off Perks
 		{
+			"perk_id": "commercial_boom",
 			"type": "sunday_perk",
 			"name": "📈 Commercial Boom",
 			"category_badge": "ECONOMIC PERK",
@@ -1440,16 +1904,18 @@ func _trigger_sunday_perk_draft() -> void:
 			"staff_cost_scale": 1.5
 		},
 		{
+			"perk_id": "emergency_grant",
 			"type": "sunday_perk",
 			"name": "🏦 Emergency City Grant",
 			"category_badge": "TREASURY PERK",
-			"benefit_line": "✔ Benefit: Receive +$50k Budget immediately",
+			"benefit_line": "✔ Benefit: Receive +50k 🪙 Budget immediately",
 			"disadvantage_line": "✖ Disadvantage: Reduce Reputation by -15%",
 			"accent": Color("4a90ba"),
 			"cash": 50000,
 			"reputation_scale": 0.85
 		},
 		{
+			"perk_id": "tourism_blitz",
 			"type": "sunday_perk",
 			"name": "🎉 Tourism Festival Blitz",
 			"category_badge": "PUBLICITY PERK",
@@ -1461,6 +1927,7 @@ func _trigger_sunday_perk_draft() -> void:
 			"trash_rate_scale": 2.0
 		},
 		{
+			"perk_id": "civic_union",
 			"type": "sunday_perk",
 			"name": "🧹 Civic Union Pact",
 			"category_badge": "STAFF PERK",
@@ -1472,23 +1939,263 @@ func _trigger_sunday_perk_draft() -> void:
 			"income_mult_scale": 0.75
 		},
 		{
+			"perk_id": "corporate_sponsorship",
 			"type": "sunday_perk",
 			"name": "🏛 Corporate Sponsorship",
 			"category_badge": "EXPANSION PERK",
-			"benefit_line": "✔ Benefit: Receive +$35k & +6 Free Walk Tiles",
+			"benefit_line": "✔ Benefit: Receive +35k 🪙 & +6 Free Walk Tiles",
 			"disadvantage_line": "✖ Disadvantage: Reduce Happiness by -15",
 			"accent": Color("c45b4a"),
 			"cash": 35000,
 			"item": FacilityCatalog.ItemId.PATH_TILE,
 			"count": 6,
 			"happiness_delta": -15.0
+		},
+		# 6-15 Archetype Trade-Off Perks
+		{
+			"perk_id": "street_performance",
+			"type": "sunday_perk",
+			"name": "🎸 Street Performance Permit",
+			"category_badge": "CULTURE PERK",
+			"benefit_line": "✔ Benefit: Dining & Service revenue +25%",
+			"disadvantage_line": "✖ Disadvantage: Introduces Street Buskers (halts 4 citizens mid-path)",
+			"accent": Color("e08832"),
+			"income_mult_scale": 1.25
+		},
+		{
+			"perk_id": "smart_plaza_5g",
+			"type": "sunday_perk",
+			"name": "📱 Smart Plaza 5G Rollout",
+			"category_badge": "TECHNOLOGY PERK",
+			"benefit_line": "✔ Benefit: Facility queues resolve 20% faster",
+			"disadvantage_line": "✖ Disadvantage: Introduces Smartphone Zombies (slow, bumps commuters)",
+			"accent": Color("3a8abf"),
+			"comfort_speed_mult": 1.20
+		},
+		{
+			"perk_id": "charter_bus",
+			"type": "sunday_perk",
+			"name": "🚌 Charter Bus Contract",
+			"category_badge": "TOURISM PERK",
+			"benefit_line": "✔ Benefit: Receive +30k 🪙 immediate grant & big spenders",
+			"disadvantage_line": "✖ Disadvantage: Introduces Tour Groups (5-7 member pack entity)",
+			"accent": Color("4ca366"),
+			"cash": 30000
+		},
+		{
+			"perk_id": "micro_mobility",
+			"type": "sunday_perk",
+			"name": "🛹 Micro-Mobility Green Zone",
+			"category_badge": "TRANSIT PERK",
+			"benefit_line": "✔ Benefit: Transit grant +10k 🪙 every Sunday",
+			"disadvantage_line": "✖ Disadvantage: Introduces Skaters (dash at 5.2 m/s, startle elders)",
+			"accent": Color("2ea88e")
+		},
+		{
+			"perk_id": "pet_friendly",
+			"type": "sunday_perk",
+			"name": "🐕 Pet-Friendly District",
+			"category_badge": "MORALE PERK",
+			"benefit_line": "✔ Benefit: Plaza Base Happiness +10",
+			"disadvantage_line": "✖ Disadvantage: Introduces Dog Walkers (2-tile leash trips passersby)",
+			"accent": Color("d47293"),
+			"happiness_bonus": 10.0
+		},
+		{
+			"perk_id": "underground_market",
+			"type": "sunday_perk",
+			"name": "🕵 Underground Market Buzz",
+			"category_badge": "COMMERCIAL PERK",
+			"benefit_line": "✔ Benefit: All commercial shop income ×1.5",
+			"disadvantage_line": "✖ Disadvantage: Attracts Pickpockets (robs patrons, lures Security)",
+			"accent": Color("9c55b5"),
+			"income_mult_scale": 1.50
+		},
+		{
+			"perk_id": "municipal_audit",
+			"type": "sunday_perk",
+			"name": "📋 Municipal Excellence Audit",
+			"category_badge": "CIVIC PERK",
+			"benefit_line": "✔ Benefit: Daily City Grants scale by 1.5×",
+			"disadvantage_line": "✖ Disadvantage: Triggers City Inspector audits (slashes Rep on dirt)",
+			"accent": Color("3a7ec9"),
+			"grant_mult_scale": 1.50
+		},
+		{
+			"perk_id": "urban_wildlife",
+			"type": "sunday_perk",
+			"name": "🕊 Urban Wildlife Sanctuary",
+			"category_badge": "COMFORT PERK",
+			"benefit_line": "✔ Benefit: Comfort facilities rest visitors 40% faster",
+			"disadvantage_line": "✖ Disadvantage: Introduces Pigeon Feeders (spawns 50% slow-zone bird swarms)",
+			"accent": Color("5a9e3d"),
+			"comfort_speed_mult": 1.40
+		},
+		{
+			"perk_id": "viral_campaign",
+			"type": "sunday_perk",
+			"name": "📸 Viral Social Campaign",
+			"category_badge": "REPUTATION PERK",
+			"benefit_line": "✔ Benefit: Reputation gains +0.5★ per clean/happy day",
+			"disadvantage_line": "✖ Disadvantage: Attracts Influencers (films chokepoints, -5 Hap if bumped)",
+			"accent": Color("d9486c")
+		},
+		{
+			"perk_id": "fun_run_route",
+			"type": "sunday_perk",
+			"name": "🏃 City Fun Run Route",
+			"category_badge": "PARTNERSHIP PERK",
+			"benefit_line": "✔ Benefit: Municipal fitness subsidy +5k 🪙/day",
+			"disadvantage_line": "✖ Disadvantage: Introduces Marathoners (pushes elders, 0 🪙 revenue)",
+			"accent": Color("e07538")
+		},
+		# 16-28 Systemic Operational Perks
+		{
+			"perk_id": "express_arterial",
+			"type": "sunday_perk",
+			"name": "⚡ Express Transit Arterial",
+			"category_badge": "TRANSIT PERK",
+			"benefit_line": "✔ Benefit: Walkway tiles give +35% movement speed",
+			"disadvantage_line": "✖ Disadvantage: Max tile capacity reduced from 10 to 8 people",
+			"accent": Color("2994a6")
+		},
+		{
+			"perk_id": "cheap_paving",
+			"type": "sunday_perk",
+			"name": "🧱 Cheap Paving",
+			"category_badge": "CONSTRUCTION PERK",
+			"benefit_line": "✔ Benefit: Walk Tile & Fence costs cut by 60%",
+			"disadvantage_line": "✖ Disadvantage: Demolition refunds reduced to 0%",
+			"accent": Color("8a7b66")
+		},
+		{
+			"perk_id": "cleaning_drones",
+			"type": "sunday_perk",
+			"name": "🛸 Automated Cleaning Drones",
+			"category_badge": "TECHNOLOGY PERK",
+			"benefit_line": "✔ Benefit: Unlocks Cleaning Drone in Staff Menu (2k 🪙 hire)",
+			"disadvantage_line": "✖ Disadvantage: Utility placement and facility upkeep +50%",
+			"accent": Color("358fb8")
+		},
+		{
+			"perk_id": "peak_hours_pricing",
+			"type": "sunday_perk",
+			"name": "⏰ Peak Hours Pricing",
+			"category_badge": "COMMERCIAL PERK",
+			"benefit_line": "✔ Benefit: Dining & Service earnings +20% during peak daytime",
+			"disadvantage_line": "✖ Disadvantage: Base Queue Patience drops by -10%",
+			"accent": Color("b87b28"),
+			"queue_patience_mult": 0.90
+		},
+		{
+			"perk_id": "all_night_lantern",
+			"type": "sunday_perk",
+			"name": "🏮 All-Night Lantern Festival",
+			"category_badge": "FESTIVAL PERK",
+			"benefit_line": "✔ Benefit: Night hours earn 2× Service Income",
+			"disadvantage_line": "✖ Disadvantage: Unlit dark tiles incur -20 Happiness penalty",
+			"accent": Color("944da8")
+		},
+		{
+			"perk_id": "rapid_checkout",
+			"type": "sunday_perk",
+			"name": "⚡ Rapid Self-Checkout",
+			"category_badge": "OPERATIONS PERK",
+			"benefit_line": "✔ Benefit: Dining & Restroom service time cut by 50%",
+			"disadvantage_line": "✖ Disadvantage: Stalls generate 2× packaging trash",
+			"accent": Color("3a9c68")
+		},
+		{
+			"perk_id": "reinforced_bollards",
+			"type": "sunday_perk",
+			"name": "🛡 Reinforced Bollards",
+			"category_badge": "CROWD CONTROL",
+			"benefit_line": "✔ Benefit: Off-path grass walkers move at crawl speed (15%)",
+			"disadvantage_line": "✖ Disadvantage: Path & gate placement costs +20%",
+			"accent": Color("68798a")
+		},
+		{
+			"perk_id": "contract_labor",
+			"type": "sunday_perk",
+			"name": "📉 Contract Labor Outsourcing",
+			"category_badge": "LABOR PERK",
+			"benefit_line": "✔ Benefit: All Staff daily wages reduced by 50%",
+			"disadvantage_line": "✖ Disadvantage: Staff 20% slower, exhaust 50% faster",
+			"accent": Color("946b45"),
+			"staff_cost_scale": 0.50
+		},
+		{
+			"perk_id": "congestion_tax",
+			"type": "sunday_perk",
+			"name": "🪙 Plaza Congestion Tax",
+			"category_badge": "FISCAL PERK",
+			"benefit_line": "✔ Benefit: Every citizen entering gate pays 20 🪙 toll",
+			"disadvantage_line": "✖ Disadvantage: Initial visitor entry happiness starts with -5 penalty",
+			"accent": Color("a67b2d")
+		},
+		{
+			"perk_id": "compact_benches",
+			"type": "sunday_perk",
+			"name": "🪑 High-Density Compact Benches",
+			"category_badge": "COMFORT PERK",
+			"benefit_line": "✔ Benefit: Benches & Picnic Tables hold +2 people",
+			"disadvantage_line": "✖ Disadvantage: Comfort amenities take 25% longer to clear",
+			"accent": Color("51859c")
+		},
+		{
+			"perk_id": "overtime_shift",
+			"type": "sunday_perk",
+			"name": "⏱ Overtime Shift Mandate",
+			"category_badge": "LABOR PERK",
+			"benefit_line": "✔ Benefit: Staff never get exhausted or need rest",
+			"disadvantage_line": "✖ Disadvantage: Daily Staff payroll increases by +50%",
+			"accent": Color("b54e38"),
+			"staff_cost_scale": 1.50
+		},
+		{
+			"perk_id": "zero_waste",
+			"type": "sunday_perk",
+			"name": "🌿 Zero-Waste Mandate",
+			"category_badge": "ECOLOGY PERK",
+			"benefit_line": "✔ Benefit: Eliminates food trash entirely; visitors never drop litter",
+			"disadvantage_line": "✖ Disadvantage: Dining stalls earn -25% less revenue",
+			"accent": Color("3a8f4c"),
+			"dining_income_mult": 0.75
+		},
+		# 31-32 Staff & Utility Perks
+		{
+			"perk_id": "staff_house",
+			"type": "sunday_perk",
+			"name": "🏡 Staff House",
+			"category_badge": "UTILITY PERK",
+			"benefit_line": "✔ Benefit: Unlocks Staff House (15k 🪙). Restores full energy 2.5× faster",
+			"disadvantage_line": "✖ Disadvantage: Falls back to public benches if >14 tiles away",
+			"accent": Color("a86835"),
+			"item": FacilityCatalog.ItemId.STAFF_HOUSE
+		},
+		{
+			"perk_id": "energetic_staff",
+			"type": "sunday_perk",
+			"name": "⚡ Energetic Staff",
+			"category_badge": "EFFICIENCY PERK",
+			"benefit_line": "✔ Benefit: Staff need 35% less resting time across all facilities",
+			"disadvantage_line": "✔ Pure operational efficiency buff",
+			"accent": Color("43a37b")
 		}
 	]
-	# Ensure the two signature perks (Income x2 / Staff x1.5 and +50k / -15% Rep) are prioritized in the draw
-	var top_two: Array[Dictionary] = [perk_pool[0], perk_pool[1]]
-	var rest: Array[Dictionary] = [perk_pool[2], perk_pool[3], perk_pool[4]]
-	rest.shuffle()
-	var final_perks: Array[Dictionary] = [top_two[0], top_two[1], rest[0]]
+
+	# Filter out perks already owned (repeatable cash/grants can remain)
+	var available: Array[Dictionary] = []
+	for p in perk_pool:
+		var pid := str(p.get("perk_id", ""))
+		if not active_perks.has(pid) or pid in ["commercial_boom", "emergency_grant", "charter_bus"]:
+			available.append(p)
+
+	available.shuffle()
+	var final_perks: Array[Dictionary] = []
+	for i in range(mini(3, available.size())):
+		final_perks.append(available[i])
+
 	_present_styled_draft_cards(final_perks, 3)
 
 func _present_styled_draft_cards(pool: Array[Dictionary], count: int) -> void:
@@ -1577,6 +2284,14 @@ func _present_styled_draft_cards(pool: Array[Dictionary], count: int) -> void:
 func _on_draft_card_selected(index: int) -> void:
 	if index >= 0 and index < draft_choices.size():
 		var chosen: Dictionary = draft_choices[index]
+		if chosen.has("perk_id"):
+			var pid: String = str(chosen["perk_id"])
+			active_perks[pid] = true
+			if pid == "express_arterial":
+				grid_manager.path_network.max_people_per_tile = 8
+			elif pid == "staff_house":
+				unlocked_special_facilities[FacilityCatalog.ItemId.STAFF_HOUSE] = true
+
 		var cash_bonus := int(chosen.get("cash", 0))
 		if cash_bonus != 0:
 			grid_manager.add_money(cash_bonus)
@@ -1633,13 +2348,26 @@ func _on_draft_card_selected(index: int) -> void:
 	_update_dock_ui()
 
 func _apply_facility_modifiers_to_all_stalls() -> void:
+	var has_clocktower := grid_manager.has_facility_of_type(FacilityCatalog.ItemId.GRAND_CLOCKTOWER)
+	var is_daytime := (day_timer / maxf(1.0, day_duration_seconds)) < 0.5
 	for stall in registered_stalls:
 		if not is_instance_valid(stall):
 			continue
 		var info := FacilityCatalog.get_item(stall.stall_type)
 		var base_dur := float(info.get("service_time", 2.0))
+		var dur := base_dur
+		if has_clocktower:
+			dur /= 1.20 # Grand Clocktower Benefit: Boosts all facility service speed +20%
 		if stall.is_comfort_facility():
-			stall.service_duration = base_dur / maxf(0.1, comfort_service_speed_mult)
+			dur /= maxf(0.1, comfort_service_speed_mult)
+			if has_perk("compact_benches"):
+				dur *= 1.25
+				stall.max_waiting_capacity = int(info.get("queue_capacity", 2)) + 2
+		if stall.stall_type == FacilityCatalog.ItemId.OBSERVATION_TOWER and is_daytime:
+			dur *= 1.25 # Sky Tower Disadvantage: Service is 25% slower during daytime
+		if (stall.stall_type == FacilityCatalog.ItemId.FOOD_SHOP or stall.stall_type == FacilityCatalog.ItemId.DRINK_STALL or stall.stall_type == FacilityCatalog.ItemId.RESTROOM) and has_perk("rapid_checkout"):
+			dur *= 0.5
+		stall.service_duration = dur
 		stall.overload_grace_period = 9.0 * queue_patience_mult
 
 # --- Customer Set Spawning & Dynamic Edge Gates ---
@@ -1679,6 +2407,14 @@ func _generate_needs_for_archetype(arch: PeepAgent.Archetype) -> Array[int]:
 		PeepAgent.Archetype.CHILD:
 			if randf() < 0.65:
 				needs.append(_pick_weighted_need())
+		PeepAgent.Archetype.TOUR_GROUP:
+			needs.append(PeepAgent.NeedType.FOOD if randf() < 0.5 else PeepAgent.NeedType.DRINK)
+		PeepAgent.Archetype.PIGEON_FEEDER, PeepAgent.Archetype.DOG_WALKER:
+			if randf() < 0.60:
+				needs.append(PeepAgent.NeedType.SIT)
+		PeepAgent.Archetype.BUSKER, PeepAgent.Archetype.SKATER, PeepAgent.Archetype.PICKPOCKET, PeepAgent.Archetype.INSPECTOR, PeepAgent.Archetype.INFLUENCER, PeepAgent.Archetype.MARATHONER:
+			# Disruptors execute specialized field behaviors without conventional dining/rest queues
+			pass
 		_:
 			var roll := randf()
 			var count := 0
@@ -1693,25 +2429,53 @@ func _generate_needs_for_archetype(arch: PeepAgent.Archetype) -> Array[int]:
 	return needs
 
 func _pick_random_archetype() -> PeepAgent.Archetype:
-	var w_normal := float(archetype_weights.get(PeepAgent.Archetype.NORMAL, 42.0))
-	var w_elder := float(archetype_weights.get(PeepAgent.Archetype.ELDER, 16.0))
-	var w_business := float(archetype_weights.get(PeepAgent.Archetype.BUSINESS, 16.0))
-	var w_couple := float(archetype_weights.get(PeepAgent.Archetype.COUPLE, 13.0))
-	var w_child := float(archetype_weights.get(PeepAgent.Archetype.CHILD, 13.0))
-	var total := w_normal + w_elder + w_business + w_couple + w_child
-	var r := randf() * total
-	if r < w_normal:
-		return PeepAgent.Archetype.NORMAL
-	r -= w_normal
-	if r < w_elder:
-		return PeepAgent.Archetype.ELDER
-	r -= w_elder
-	if r < w_business:
-		return PeepAgent.Archetype.BUSINESS
-	r -= w_business
-	if r < w_couple:
-		return PeepAgent.Archetype.COUPLE
-	return PeepAgent.Archetype.CHILD
+	var candidates: Array[Dictionary] = [
+		{"arch": PeepAgent.Archetype.NORMAL, "weight": float(archetype_weights.get(PeepAgent.Archetype.NORMAL, 42.0))},
+		{"arch": PeepAgent.Archetype.ELDER, "weight": float(archetype_weights.get(PeepAgent.Archetype.ELDER, 16.0))},
+		{"arch": PeepAgent.Archetype.BUSINESS, "weight": float(archetype_weights.get(PeepAgent.Archetype.BUSINESS, 16.0))},
+		{"arch": PeepAgent.Archetype.COUPLE, "weight": float(archetype_weights.get(PeepAgent.Archetype.COUPLE, 13.0))},
+		{"arch": PeepAgent.Archetype.CHILD, "weight": float(archetype_weights.get(PeepAgent.Archetype.CHILD, 13.0))},
+	]
+	if has_perk("street_performance"):
+		candidates.append({"arch": PeepAgent.Archetype.BUSKER, "weight": 14.0})
+	if has_perk("smart_plaza_5g"):
+		candidates.append({"arch": PeepAgent.Archetype.PHONE_ZOMBIE, "weight": 14.0})
+	if has_perk("charter_bus"):
+		candidates.append({"arch": PeepAgent.Archetype.TOUR_GROUP, "weight": 12.0})
+	if has_perk("micro_mobility"):
+		candidates.append({"arch": PeepAgent.Archetype.SKATER, "weight": 14.0})
+	if has_perk("pet_friendly"):
+		candidates.append({"arch": PeepAgent.Archetype.DOG_WALKER, "weight": 14.0})
+	if has_perk("underground_market"):
+		candidates.append({"arch": PeepAgent.Archetype.PICKPOCKET, "weight": 12.0})
+	if has_perk("municipal_audit"):
+		candidates.append({"arch": PeepAgent.Archetype.INSPECTOR, "weight": 12.0})
+	if has_perk("urban_wildlife"):
+		candidates.append({"arch": PeepAgent.Archetype.PIGEON_FEEDER, "weight": 14.0})
+	if has_perk("viral_campaign"):
+		candidates.append({"arch": PeepAgent.Archetype.INFLUENCER, "weight": 12.0})
+	if has_perk("fun_run_route"):
+		candidates.append({"arch": PeepAgent.Archetype.MARATHONER, "weight": 14.0})
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.WISHING_WELL):
+		candidates.append({"arch": PeepAgent.Archetype.PICKPOCKET, "weight": 9.0}) # Wishing Well Disadvantage: +50% Pickpocket attraction
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.CYBER_ARCADE):
+		candidates.append({"arch": PeepAgent.Archetype.SKATER, "weight": 9.0}) # Cyber Arcade Disadvantage: Attracts Skaters & Phone Zombies
+		candidates.append({"arch": PeepAgent.Archetype.PHONE_ZOMBIE, "weight": 9.0})
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.STREET_STAGE):
+		candidates.append({"arch": PeepAgent.Archetype.BUSKER, "weight": 8.0}) # Street Stage Disadvantage: Attracts buskers
+
+	var total_w := 0.0
+	for item in candidates:
+		total_w += float(item["weight"])
+
+	var r := randf() * total_w
+	for item in candidates:
+		var w: float = float(item["weight"])
+		if r < w:
+			return item["arch"] as PeepAgent.Archetype
+		r -= w
+
+	return PeepAgent.Archetype.NORMAL
 
 func _pick_spawn_and_exit_gates() -> Array[Vector2i]:
 	var entry_candidates := grid_manager.path_network.get_entry_gate_cells()
@@ -1720,28 +2484,77 @@ func _pick_spawn_and_exit_gates() -> Array[Vector2i]:
 		if not grid_manager.path_network.is_tile_full(c, 2):
 			non_full_entries.append(c)
 
-	var start_cell: Vector2i = left_entrance_coords
+	var start_cell: Vector2i = Vector2i(-grid_manager.grid_half_width, 0)
 	if not non_full_entries.is_empty():
 		start_cell = non_full_entries.pick_random()
 	elif not entry_candidates.is_empty():
-		# If edge path gates are full, allow customer to walk in freely from an adjacent walkable edge tile
-		var free_edge: Array[Vector2i] = []
-		var edge_x := -grid_manager.grid_half_width if randf() < 0.5 else grid_manager.grid_half_width
-		for gz in range(-grid_manager.grid_half_height, grid_manager.grid_half_height + 1):
-			var ec := Vector2i(edge_x, gz)
-			if grid_manager.path_network.is_cell_walkable(ec) and grid_manager.path_network.get_tile_type(ec) != FacilityCatalog.ItemId.EXIT_GATE and not grid_manager.path_network.is_tile_full(ec, 2):
-				free_edge.append(ec)
-		if not free_edge.is_empty():
-			start_cell = free_edge.pick_random()
-		else:
-			start_cell = entry_candidates.pick_random()
+		start_cell = entry_candidates.pick_random()
 
-	var exit_candidates := grid_manager.path_network.get_exit_gate_cells(-signi(start_cell.x))
-	var end_cell: Vector2i = right_entrance_coords if start_cell.x <= 0 else left_entrance_coords
+	var exit_candidates := grid_manager.path_network.get_exit_gate_cells(0)
+	var end_cell: Vector2i = Vector2i(grid_manager.grid_half_width, 0)
 	if not exit_candidates.is_empty():
 		end_cell = exit_candidates.pick_random()
 
 	return [start_cell, end_cell]
+
+func _schedule_10s_customer_arrivals() -> void:
+	scheduled_customer_arrivals.clear()
+	var base_rep := maxf(1.0, reputation)
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.CIRCUS_TENT):
+		base_rep *= 1.30 # Grand Circus Benefit: +30% customer arrival rate
+	var integer_part := floori(base_rep)
+	var fractional_part := fmod(base_rep, 1.0)
+	var count := integer_part
+	if randf() < fractional_part:
+		count += 1
+	count = maxi(1, count)
+
+	var times: Array[float] = []
+	var slot_len := 9.6 / float(count)
+	for i in range(count):
+		var slot_min := 0.2 + float(i) * slot_len
+		var slot_max := slot_min + slot_len
+		times.append(randf_range(slot_min + 0.05, slot_max - 0.05))
+	times.sort()
+	scheduled_customer_arrivals = times
+
+func _spawn_single_customer() -> void:
+	# Synchronize maximum concurrent customers in the plaza with reputation
+	var active_count := 0
+	for child in peeps_container.get_children():
+		if child is PeepAgent and not child.is_queued_for_deletion():
+			active_count += 1
+
+	var max_active := maxi(4, int(ceil(reputation * 3.0)))
+	if active_count >= max_active:
+		return
+
+	var pair := _pick_spawn_and_exit_gates()
+	var arch := _pick_random_archetype()
+	var needs := _generate_needs_for_archetype(arch)
+	var p := _create_citizen_instance(arch, needs, pair[0], pair[1])
+	_apply_entry_perks(p)
+
+func _apply_entry_perks(peep: PeepAgent) -> void:
+	if not is_instance_valid(peep):
+		return
+	if has_perk("congestion_tax"):
+		grid_manager.add_money(20)
+		daily_service_income += 20
+		peep.max_need_patience = maxf(10.0, peep.max_need_patience - 5.0)
+		penalize_happiness(0.05)
+		_spawn_floating_cash_popup(peep.global_position + Vector3(0.0, 1.0, 0.0), "+20 🪙 Toll", Color("55dd77"))
+	# Grand Clocktower Disadvantage: Business visitors lose 20% queue patience
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.GRAND_CLOCKTOWER) and peep.archetype == PeepAgent.Archetype.BUSINESS:
+		peep.max_need_patience *= 0.80
+	# Skate Bowl Benefit & Disadvantage: +15% walk speed plaza-wide; Elders lose 15% patience
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.SKATE_BOWL):
+		peep.walk_speed *= 1.15
+		if peep.archetype == PeepAgent.Archetype.ELDER:
+			peep.max_need_patience *= 0.85
+	# Art Obelisk Disadvantage: 10% of visitors critique it (-0.5 ♥)
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.ART_OBELISK) and randf() < 0.10:
+		penalize_happiness(0.5)
 
 func _spawn_customer_set() -> void:
 	var bounds := get_current_set_bounds()
@@ -1750,17 +2563,35 @@ func _spawn_customer_set() -> void:
 	while spawned < set_size:
 		var pair := _pick_spawn_and_exit_gates()
 		var arch := _pick_random_archetype()
-		var needs := _generate_needs_for_archetype(arch)
-		_create_citizen_instance(arch, needs, pair[0], pair[1])
-		spawned += 1
+		if arch == PeepAgent.Archetype.TOUR_GROUP:
+			var pack_size := randi_range(5, 7)
+			var group_needs := _generate_needs_for_archetype(arch)
+			for _member in range(pack_size):
+				var p := _create_citizen_instance(arch, group_needs, pair[0], pair[1])
+				_apply_entry_perks(p)
+			spawned += pack_size
+		else:
+			var needs := _generate_needs_for_archetype(arch)
+			var p := _create_citizen_instance(arch, needs, pair[0], pair[1])
+			_apply_entry_perks(p)
+			spawned += 1
 
 func _spawn_peep_from_custom(start_coords: Vector2i, arch: PeepAgent.Archetype = PeepAgent.Archetype.NORMAL) -> void:
+	var active_count := 0
+	for child in peeps_container.get_children():
+		if child is PeepAgent and not child.is_queued_for_deletion():
+			active_count += 1
+	var max_active := maxi(4, int(ceil(reputation * 3.0)))
+	if active_count >= max_active:
+		return
+
 	var exit_candidates := grid_manager.path_network.get_exit_gate_cells(0)
 	var end_coords := left_entrance_coords if randf() < 0.5 else right_entrance_coords
 	if not exit_candidates.is_empty():
 		end_coords = exit_candidates.pick_random()
 	var needs := _generate_needs_for_archetype(arch)
-	_create_citizen_instance(arch, needs, start_coords, end_coords)
+	var p := _create_citizen_instance(arch, needs, start_coords, end_coords)
+	_apply_entry_perks(p)
 
 func _create_citizen_instance(
 	arch: PeepAgent.Archetype,
@@ -1780,9 +2611,30 @@ func _create_citizen_instance(
 	peep.exited_unfulfilled.connect(_on_peep_exited_unfulfilled)
 	peep.exited_happy_passthrough.connect(_on_peep_exited_happy_passthrough)
 	peep.wants_to_dispose_trash.connect(_on_peep_wants_to_dispose_trash)
+	peep.security_alert_pickpocket.connect(_on_security_alert_pickpocket)
+	peep.inspector_audit_infraction.connect(_on_inspector_audit_infraction)
+	peep.pigeon_slow_zone_created.connect(_on_pigeon_slow_zone_created)
 
 	_assign_best_route_for_peep(peep)
 	return peep
+
+func _on_security_alert_pickpocket(pickpocket: PeepAgent) -> void:
+	if not is_instance_valid(pickpocket):
+		return
+	penalize_happiness(2.5)
+	_spawn_floating_cash_popup(pickpocket.global_position + Vector3(0.0, 1.4, 0.0), "🚨 Robbery!", Color("ff4d4d"))
+	for stf in active_staff:
+		if is_instance_valid(stf) and stf.staff_type == StaffAgent.StaffType.SECURITY:
+			if stf.state != StaffAgent.StaffState.RESTING:
+				_assign_task_to_staff(stf)
+
+func _on_inspector_audit_infraction(reason: String, penalty: float) -> void:
+	penalize_happiness(penalty * 2.5)
+	reputation = maxf(1.0, reputation - 0.15)
+	_spawn_floating_cash_popup(Vector3.ZERO, "📋 Audit: -Rep! %s" % reason, Color("e04434"))
+
+func _on_pigeon_slow_zone_created(center: Vector2i, _duration: float) -> void:
+	_spawn_floating_cash_popup(Vector3(center.x, 1.0, center.y), "🐦 Pigeons Swarm!", Color("eedd82"))
 
 func _assign_best_route_for_peep(peep: PeepAgent) -> void:
 	if not is_instance_valid(peep):
@@ -1800,7 +2652,7 @@ func _assign_best_route_for_peep(peep: PeepAgent) -> void:
 	# Ensure peep.exit_coords is still a valid exit gate (not blocked by a Fence or turned into an Entry Gate)
 	var exit_type := grid_manager.path_network.get_tile_type(peep.exit_coords)
 	if not grid_manager.path_network.is_cell_walkable(peep.exit_coords) or exit_type == FacilityCatalog.ItemId.ENTRY_GATE:
-		var valid_exits := grid_manager.path_network.get_exit_gate_cells(-signi(peep.spawn_coords.x))
+		var valid_exits := grid_manager.path_network.get_exit_gate_cells(0)
 		if not valid_exits.is_empty():
 			peep.exit_coords = valid_exits.pick_random()
 
@@ -1824,10 +2676,10 @@ func _assign_best_route_for_peep(peep: PeepAgent) -> void:
 			continue
 		if stall.need_fulfilled != desired_need:
 			continue
-		var access_variant: Variant = grid_manager.path_network.get_adjacent_access_tile(stall.grid_coords)
-		if access_variant == null:
+		var ent_cell := stall.get_entrance_coords()
+		if not grid_manager.path_network.is_cell_walkable(ent_cell):
 			continue
-		var access_cell: Vector2i = access_variant
+		var access_cell: Vector2i = ent_cell
 		var candidate_route := grid_manager.path_network.get_route(
 			from_coords, access_cell, peep.prefers_crowd_diversion, peep.is_walking_freely
 		)
@@ -1912,14 +2764,21 @@ func _recalculate_all_peep_routes() -> void:
 # --- Littering, Auras, Lost State & Staff Coordination ---
 
 func _on_peep_wants_to_dispose_trash(_peep: PeepAgent, tile_coords: Vector2i) -> void:
+	if has_perk("zero_waste"):
+		return
 	for stall in registered_stalls:
 		if is_instance_valid(stall) and stall.can_accept_trash():
 			if Vector2(stall.grid_coords - tile_coords).length() <= 2.6:
 				stall.deposit_trash()
 				return
-	if randf() < 0.65 * trash_drop_multiplier:
+	var drop_prob := 0.65 * trash_drop_multiplier
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.GOLDEN_MONOLITH):
+		drop_prob *= 1.35 # Burger Monolith Disadvantage: +35% plaza littering rate
+	if has_perk("rapid_checkout"):
+		drop_prob *= 2.0
+	if randf() < drop_prob:
 		grid_manager.spawn_trash_on_tile(tile_coords)
-		if trash_drop_multiplier >= 1.8 and randf() < 0.55:
+		if (trash_drop_multiplier >= 1.8 or has_perk("rapid_checkout")) and randf() < 0.55:
 			grid_manager.spawn_trash_on_tile(tile_coords)
 		_ApplyLitterPenaltyCheck(tile_coords)
 
@@ -1964,25 +2823,36 @@ func _process_plaza_auras_and_lost_events() -> void:
 		peep.current_tile_security_boost = sec_boost
 
 		if peep.state == PeepAgent.AgentState.LOST:
-			for kp in kiosk_positions:
-				if p_pos2d.distance_to(kp) <= 3.0:
+			if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.OBSERVATION_TOWER):
+				peep.guide_out_of_lost() # Sky Tower Benefit: Map-wide lost visitor beacon
+				continue
+			for stall in registered_stalls:
+				if not is_instance_valid(stall) or not stall.is_info_kiosk():
+					continue
+				var rad := 6.0 if stall.stall_type == FacilityCatalog.ItemId.GRAND_CLOCKTOWER else 3.0
+				if p_pos2d.distance_to(Vector2(stall.grid_coords.x, stall.grid_coords.y)) <= rad:
 					peep.guide_out_of_lost()
 					break
 			continue
 
 		if not peep.has_been_lost and absi(p_cell.x) <= grid_manager.grid_half_width - 2:
+			if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.OBSERVATION_TOWER):
+				continue # Sky Tower prevents getting lost across the entire plaza
 			if peep.archetype == PeepAgent.Archetype.CHILD or peep.archetype == PeepAgent.Archetype.ELDER:
 				var near_kiosk_or_sec := sec_boost
-				for kp in kiosk_positions:
-					if p_pos2d.distance_to(kp) <= 3.2:
-						near_kiosk_or_sec = true
-						break
-				if not near_kiosk_or_sec:
-					var near_lamp := false
-					for lp in lamp_positions:
-						if p_pos2d.distance_to(lp) <= 3.5:
-							near_lamp = true
+				for stall in registered_stalls:
+					if is_instance_valid(stall) and stall.is_info_kiosk():
+						var rad := 6.2 if stall.stall_type == FacilityCatalog.ItemId.GRAND_CLOCKTOWER else 3.2
+						if p_pos2d.distance_to(Vector2(stall.grid_coords.x, stall.grid_coords.y)) <= rad:
+							near_kiosk_or_sec = true
 							break
+				if not near_kiosk_or_sec:
+					var near_lamp := grid_manager.has_facility_of_type(FacilityCatalog.ItemId.PLANETARIUM) # Planetarium Benefit: Illuminates entire plaza at Night
+					if not near_lamp:
+						for lp in lamp_positions:
+							if p_pos2d.distance_to(lp) <= 3.5:
+								near_lamp = true
+								break
 					var base_chance := 0.045 if peep.archetype == PeepAgent.Archetype.CHILD else 0.025
 					if is_night and not near_lamp:
 						base_chance *= 1.6
@@ -2001,7 +2871,7 @@ func hire_staff(staff_id: int, is_free: bool = false) -> void:
 	var staff := StaffAgent.new()
 	staff_container.add_child(staff)
 	var spawn_cell := _pick_random_path_cell()
-	staff.setup_staff(staff_id as StaffAgent.StaffType, Vector3(spawn_cell.x, 0.0, spawn_cell.y))
+	staff.setup_staff(staff_id as StaffAgent.StaffType, Vector3(spawn_cell.x, 0.0, spawn_cell.y), self)
 	staff.request_staff_task.connect(_assign_task_to_staff)
 	staff.janitor_cleaned_cell.connect(_on_janitor_cleaned_cell)
 	staff.staff_guided_peep.connect(_on_staff_guided_peep)
@@ -2017,14 +2887,73 @@ func _assign_task_to_staff(staff: StaffAgent) -> void:
 
 	var s_cell := _get_nearest_valid_walkable_cell(staff.get_current_grid_coords())
 
-	if staff.staff_type == StaffAgent.StaffType.JANITOR:
-		# 1. Look for floor trash props reachable without crossing water/fences
+	# 1. Staff Seeking Rest (Fatigue loop)
+	if staff.state == StaffAgent.StaffState.SEEKING_REST:
+		# Option A: Staff House within <= 14 tiles
+		var best_staff_house: StallController = null
+		var best_house_access := s_cell
+		var best_house_route := PackedVector2Array()
+		var best_house_dist := 999999.0
+
+		for stall in registered_stalls:
+			if is_instance_valid(stall) and stall.is_staff_house():
+				var dist: float = Vector2(stall.grid_coords - s_cell).length()
+				if dist <= 14.0:
+					var acc_var: Variant = grid_manager.path_network.get_adjacent_access_tile(stall.grid_coords)
+					if acc_var != null:
+						var r := grid_manager.path_network.get_route(s_cell, acc_var as Vector2i, false, true, true)
+						if not r.is_empty() and dist < best_house_dist:
+							best_staff_house = stall
+							best_house_access = acc_var as Vector2i
+							best_house_route = r
+							best_house_dist = dist
+
+		if best_staff_house != null:
+			staff.assign_rest_route(best_staff_house, best_house_access, best_house_route)
+			return
+
+		# Option B: Multi-facility relaxation routine (Bench, Picnic Table, Flower Garden, Duck Pond, Dining, Restroom, etc.)
+		var best_relax: StallController = null
+		var best_relax_access := s_cell
+		var best_relax_route := PackedVector2Array()
+		var best_distinct_relax: StallController = null
+		var best_distinct_access := s_cell
+		var best_distinct_route := PackedVector2Array()
+
+		for stall in registered_stalls:
+			if is_instance_valid(stall) and stall.is_relaxation_facility() and not stall.is_staff_house():
+				var acc_var: Variant = grid_manager.path_network.get_adjacent_access_tile(stall.grid_coords)
+				if acc_var != null:
+					var r := grid_manager.path_network.get_route(s_cell, acc_var as Vector2i, false, false, true)
+					if not r.is_empty():
+						if best_relax == null or r.size() < best_relax_route.size():
+							best_relax = stall
+							best_relax_access = acc_var as Vector2i
+							best_relax_route = r
+						if staff.last_rest_facility_ref != stall:
+							if best_distinct_relax == null or r.size() < best_distinct_route.size():
+								best_distinct_relax = stall
+								best_distinct_access = acc_var as Vector2i
+								best_distinct_route = r
+
+		if best_distinct_relax != null:
+			staff.assign_rest_route(best_distinct_relax, best_distinct_access, best_distinct_route)
+			return
+		elif best_relax != null:
+			staff.assign_rest_route(best_relax, best_relax_access, best_relax_route)
+			return
+		else:
+			staff.assign_rest_route(null, s_cell, PackedVector2Array())
+			return
+
+	# 2. Janitor and Drone tasks (Trash cleanup & emptying bins)
+	if staff.staff_type == StaffAgent.StaffType.JANITOR or staff.staff_type == StaffAgent.StaffType.DRONE:
 		var best_trash_cell: Variant = null
 		var best_route := PackedVector2Array()
 		for cell_key in grid_manager.trash_nodes.keys():
 			var c: Vector2i = cell_key
 			if grid_manager.get_trash_count_on_tile(c) > 0:
-				var r := grid_manager.path_network.get_route(s_cell, c, false, true)
+				var r := grid_manager.path_network.get_route(s_cell, c, false, true, true)
 				if not r.is_empty() and (best_trash_cell == null or r.size() < best_route.size()):
 					best_trash_cell = c
 					best_route = r
@@ -2032,42 +2961,38 @@ func _assign_task_to_staff(staff: StaffAgent) -> void:
 			staff.assign_janitor_target(best_trash_cell as Vector2i, null, best_route)
 			return
 
-		# 2. Look for Trashcans with stored trash >= 4
 		for stall in registered_stalls:
 			if is_instance_valid(stall) and stall.is_trashcan() and stall.stored_trash >= 4:
 				var acc_var: Variant = grid_manager.path_network.get_adjacent_access_tile(stall.grid_coords)
 				if acc_var != null:
-					var r := grid_manager.path_network.get_route(s_cell, acc_var as Vector2i, false, true)
+					var r := grid_manager.path_network.get_route(s_cell, acc_var as Vector2i, false, true, true)
 					if not r.is_empty():
 						staff.assign_janitor_target(acc_var as Vector2i, stall, r)
 						return
 
-		# 3. Patrol off-path around the plaza (respecting water, fences, and obstacles)
 		var patrol_cell := _pick_random_walkable_cell()
-		var p_route := grid_manager.path_network.get_route(s_cell, patrol_cell, false, true)
+		var p_route := grid_manager.path_network.get_route(s_cell, patrol_cell, false, true, true)
 		staff.assign_janitor_patrol(patrol_cell, p_route)
 		return
 
-	# Plaza Staff or Security Officer
-	if staff.state == StaffAgent.StaffState.SEEKING_REST:
-		var best_comfort: StallController = null
-		var best_access := s_cell
-		var best_route := PackedVector2Array()
-		for stall in registered_stalls:
-			if is_instance_valid(stall) and stall.is_comfort_facility():
-				var acc_var: Variant = grid_manager.path_network.get_adjacent_access_tile(stall.grid_coords)
-				if acc_var != null:
-					var r := grid_manager.path_network.get_route(s_cell, acc_var as Vector2i, false, false)
-					if not r.is_empty() and (best_comfort == null or r.size() < best_route.size()):
-						best_comfort = stall
-						best_access = acc_var as Vector2i
-						best_route = r
-		if best_comfort != null:
-			staff.assign_rest_route(best_comfort, best_access, best_route)
-		else:
-			staff.assign_rest_route(null, s_cell, PackedVector2Array())
-		return
+	# 3. Security Officer tasks (Pickpocket chase, Crowd Aura, Lost patrons)
+	if staff.staff_type == StaffAgent.StaffType.SECURITY:
+		var target_thief: PeepAgent = null
+		var thief_route := PackedVector2Array()
+		for child in peeps_container.get_children():
+			if child is PeepAgent:
+				var p := child as PeepAgent
+				if p.archetype == PeepAgent.Archetype.PICKPOCKET and p.is_fleeing_pickpocket:
+					var p_cell := _get_nearest_valid_walkable_cell(p.get_current_grid_coords())
+					var r := grid_manager.path_network.get_route(s_cell, p_cell, false, false, true)
+					if not r.is_empty() and (target_thief == null or r.size() < thief_route.size()):
+						target_thief = p
+						thief_route = r
+		if target_thief != null:
+			staff.assign_guide_target(target_thief, thief_route)
+			return
 
+	# 4. Plaza Staff or Security: Guide lost patrons
 	var nearest_lost: PeepAgent = null
 	var nearest_route := PackedVector2Array()
 	for child in peeps_container.get_children():
@@ -2075,7 +3000,7 @@ func _assign_task_to_staff(staff: StaffAgent) -> void:
 			var p := child as PeepAgent
 			if p.state == PeepAgent.AgentState.LOST:
 				var p_cell := _get_nearest_valid_walkable_cell(p.get_current_grid_coords())
-				var r := grid_manager.path_network.get_route(s_cell, p_cell, false, false)
+				var r := grid_manager.path_network.get_route(s_cell, p_cell, false, false, true)
 				if not r.is_empty() and (nearest_lost == null or r.size() < nearest_route.size()):
 					nearest_lost = p
 					nearest_route = r
@@ -2084,7 +3009,7 @@ func _assign_task_to_staff(staff: StaffAgent) -> void:
 		staff.assign_guide_target(nearest_lost, nearest_route)
 	else:
 		var patrol_dest := _pick_random_path_cell()
-		var p_route := grid_manager.path_network.get_route(s_cell, patrol_dest, false, false)
+		var p_route := grid_manager.path_network.get_route(s_cell, patrol_dest, false, false, true)
 		staff.assign_path_patrol(p_route)
 
 func _on_janitor_cleaned_cell(coords: Vector2i) -> void:
@@ -2115,25 +3040,110 @@ func _on_peep_served(peep: Node3D, revenue: int, stall: Node3D) -> void:
 	satisfied_patrons += 1
 	day_patrons_served += 1
 
+	var s_type: int = (stall as StallController).stall_type if (stall is StallController) else -1
+	var p_agent: PeepAgent = (peep as PeepAgent) if (peep is PeepAgent) else null
+
+	# Special Signature Landmark patron effects:
+	if s_type == FacilityCatalog.ItemId.VINTAGE_CAROUSEL and is_instance_valid(p_agent):
+		if p_agent.archetype == PeepAgent.Archetype.CHILD or p_agent.archetype == PeepAgent.Archetype.COUPLE:
+			happiness = clampf(happiness + 2.0, 0.0, 100.0) # Carousel Benefit: +2 Happiness for Kids & Couples
+	elif s_type == FacilityCatalog.ItemId.WISHING_WELL and is_instance_valid(p_agent):
+		p_agent.max_need_patience += 15.0 # Wishing Well Benefit: +15 visitor patience
+		p_agent.need_patience_timer = maxf(0.0, p_agent.need_patience_timer - 15.0)
+	elif s_type == FacilityCatalog.ItemId.GELATO_PAVILION and is_instance_valid(p_agent):
+		p_agent.max_need_patience += 6.0 # Gelato Pavilion Benefit: +6 visitor patience
+		if not has_perk("zero_waste"): # Gelato Pavilion Disadvantage: 2x litter after eating
+			grid_manager.spawn_trash_on_tile(p_agent.get_current_grid_coords())
+	elif s_type == FacilityCatalog.ItemId.CIRCUS_TENT and is_instance_valid(p_agent):
+		if not has_perk("zero_waste"): # Grand Circus Disadvantage: Patrons drop 2x litter
+			grid_manager.spawn_trash_on_tile(p_agent.get_current_grid_coords())
+	elif s_type == FacilityCatalog.ItemId.BIERGARTEN and is_instance_valid(p_agent):
+		if randf() < 0.40 and not p_agent.needs_queue.has(PeepAgent.NeedType.RESTROOM):
+			p_agent.needs_queue.append(PeepAgent.NeedType.RESTROOM) # Biergarten Disadvantage: 40% immediately need a Restroom
+			p_agent.total_initial_needs += 1
+	elif s_type == FacilityCatalog.ItemId.SPA_BATHHOUSE:
+		happiness = clampf(happiness + 1.5, 0.0, 100.0) # Spa Bathhouse Benefit: Restores happiness
+
 	if revenue > 0:
-		# Higher happiness generates generous tips (75% to 135% base)
-		var hap_tip_mult := clampf(0.75 + 0.50 * (happiness / 100.0), 0.75, 1.35)
-		if peep is PeepAgent and (peep as PeepAgent).archetype == PeepAgent.Archetype.BUSINESS:
-			hap_tip_mult *= 1.35 # Business patrons tip generously for prompt service
+		# Higher happiness generates generous tips (75% to 150% base, +75% bliss bonus at >=80 happiness)
+		var hap_tip_mult := clampf(0.85 + 0.65 * (happiness / 100.0), 0.85, 1.50)
+		if happiness >= 80.0:
+			hap_tip_mult *= 1.40 # Surreal Bliss Tip bonus!
+		if is_instance_valid(p_agent) and p_agent.archetype == PeepAgent.Archetype.BUSINESS:
+			hap_tip_mult *= 1.45 # Business patrons tip generously for prompt service
+		if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.ART_OBELISK):
+			hap_tip_mult *= 1.25 # Art Obelisk Benefit: All visitor tip multipliers +25%
+
 		var cat_mult := 1.0
 		if stall is StallController:
-			var s_info := FacilityCatalog.get_item((stall as StallController).stall_type)
-			if int(s_info.get("category", -1)) == FacilityCatalog.Category.DINING:
+			var s_info := FacilityCatalog.get_item(s_type)
+			if int(s_info.get("category", -1)) == FacilityCatalog.Category.DINING or (stall as StallController).is_dining_facility():
 				cat_mult = dining_income_mult
-		var final_rev := int(roundf(float(revenue) * service_income_multiplier * cat_mult * hap_tip_mult))
+				if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.ZEN_SHRINE):
+					cat_mult *= 0.85 # Zen Shrine Disadvantage: Dining spending -15%
+			if s_type == FacilityCatalog.ItemId.FOOD_SHOP and grid_manager.has_facility_of_type(FacilityCatalog.ItemId.GOLDEN_MONOLITH):
+				cat_mult *= 1.40 # Burger Monolith Benefit: All Food Shops +40% income
+			if s_type == FacilityCatalog.ItemId.DRINK_STALL and grid_manager.has_facility_of_type(FacilityCatalog.ItemId.BIERGARTEN):
+				cat_mult *= 1.35 # Biergarten Benefit: All Drink Stalls +35% income
+			if s_type == FacilityCatalog.ItemId.STREET_STAGE and grid_manager.has_facility_of_type(FacilityCatalog.ItemId.TEA_HOUSE):
+				cat_mult *= 0.80 # Matcha House Disadvantage: Street Stage tips -20%
+
+		var day_prog := day_timer / maxf(1.0, day_duration_seconds)
+		var is_night_hr := (day_prog >= 0.50)
+		if s_type == FacilityCatalog.ItemId.CYBER_ARCADE and is_night_hr:
+			cat_mult *= 2.0 # Cyber Arcade Benefit: 2x ticket revenue at Night
+		elif s_type == FacilityCatalog.ItemId.PLANETARIUM and not is_night_hr:
+			cat_mult *= 0.70 # Planetarium Disadvantage: Daytime shows earn 30% less
+
+		# Surreal Landmark Proximity Bonus (+50% coins if near Flower Garden, Duck Pond, Botanical Dome, or Steam Train)
+		var scenic_bonus := 1.0
+		if stall is StallController:
+			var s_coords: Vector2i = (stall as StallController).grid_coords
+			for other_stall in registered_stalls:
+				if is_instance_valid(other_stall) and other_stall != stall:
+					var st_type: int = other_stall.stall_type
+					var dist_lim := 0.0
+					if st_type == FacilityCatalog.ItemId.FLOWER_GARDEN or st_type == FacilityCatalog.ItemId.DUCK_POND:
+						dist_lim = 3.2
+					elif st_type == FacilityCatalog.ItemId.BOTANICAL_DOME:
+						dist_lim = 4.0
+					elif st_type == FacilityCatalog.ItemId.STEAM_TRAIN:
+						dist_lim = 3.5
+					if dist_lim > 0.0 and Vector2(other_stall.grid_coords - s_coords).length() <= dist_lim:
+						scenic_bonus = 1.50
+						break
+
+		# Peak Hours Pricing (Perk 19): +20% during daytime peak
+		var peak_mult := 1.0
+		if has_perk("peak_hours_pricing"):
+			if day_prog >= 0.25 and day_prog <= 0.75:
+				peak_mult = 1.20
+
+		# All-Night Lantern Festival (Perk 20): 2x income during night
+		var night_mult := 1.0
+		if has_perk("all_night_lantern"):
+			if day_prog < 0.20 or day_prog > 0.80:
+				night_mult = 2.0
+
+		var final_rev := int(roundf(float(revenue) * service_income_multiplier * cat_mult * hap_tip_mult * scenic_bonus * peak_mult * night_mult))
 		daily_service_income += final_rev
 		grid_manager.add_money(final_rev)
 
+		if scenic_bonus > 1.0:
+			_spawn_floating_cash_popup(stall.global_position + Vector3(0.0, 1.45, 0.0), "🌸 Scenic Bonus! +50%", Color("f472b6"))
+		_spawn_floating_cash_popup(stall.global_position + Vector3(0.0, 1.15, 0.0), "+%s" % FacilityCatalog.format_money(final_rev), Color(0.98, 0.88, 0.35))
+
 	_update_stats_ui()
 
-func _on_peep_exited_happy_passthrough(_peep: PeepAgent) -> void:
+func _on_peep_exited_happy_passthrough(peep: PeepAgent) -> void:
 	satisfied_patrons += 1
 	day_patrons_happy_exit += 1
+	if is_instance_valid(peep) and peep.is_100_percent_happy():
+		var rep_gain := 0.15 if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.FERRIS_WHEEL) else 0.10
+		reputation += rep_gain
+		peak_reputation = maxf(peak_reputation, reputation)
+		_update_stats_ui()
+		_spawn_floating_cash_popup(peep.global_position + Vector3(0.0, 1.2, 0.0), "+%.2f ★" % rep_gain, Color("ffd700"))
 
 func _on_peep_frustrated_at_stall(_peep: Node3D) -> void:
 	day_stalls_overloaded += 1
@@ -2145,7 +3155,10 @@ func _on_peep_exited_unfulfilled(_peep: PeepAgent) -> void:
 func _apply_happiness_penalty(amount: float) -> void:
 	if is_game_over:
 		return
-	happiness = maxf(0.0, happiness - amount)
+	var scaled_amt := amount
+	if grid_manager.has_facility_of_type(FacilityCatalog.ItemId.ZEN_SHRINE):
+		scaled_amt *= 0.60 # Zen Shrine Benefit: Cuts all Plaza Happiness penalties by 40%
+	happiness = maxf(0.0, happiness - scaled_amt)
 	_update_stats_ui()
 
 func _trigger_game_over() -> void:
@@ -2173,6 +3186,9 @@ func _spawn_floating_popup(world_pos: Vector3, text_str: String, col: Color) -> 
 	lbl.modulate = col
 	popups_container.add_child(lbl)
 	floating_popups.append({"node": lbl, "age": 0.0})
+
+func _spawn_floating_cash_popup(world_pos: Vector3, text_str: String, col: Color = Color(0.98, 0.88, 0.35)) -> void:
+	_spawn_floating_popup(world_pos, text_str, col)
 
 func _update_floating_popups(delta: float) -> void:
 	for i in range(floating_popups.size() - 1, -1, -1):
@@ -2204,6 +3220,9 @@ func _set_sim_speed(new_speed: float) -> void:
 	_update_speed_buttons_ui()
 
 func _select_build_tool(tool_id: int) -> void:
+	if tool_id >= 0 and FacilityCatalog.is_signature_item(tool_id) and grid_manager.has_facility_of_type(tool_id):
+		_spawn_floating_cash_popup(Vector3(0.0, 1.8, 0.0), "✨ Already Built! (Max 1 in Park)", Color("fde047"))
+		return
 	if tool_id >= 0 and grid_manager.current_tool == tool_id:
 		# Clicking the currently selected facility unselects it
 		grid_manager.set_build_tool(-1)
@@ -2251,6 +3270,20 @@ func _update_dock_ui() -> void:
 	if tools_hbox:
 		tools_hbox.visible = (selected_category >= 0)
 
+	var is_sig_cat: bool = (selected_category == FacilityCatalog.Category.SIGNATURE)
+	var sig_ids := FacilityCatalog.get_signature_item_ids()
+	var total_sig_pages := maxi(1, int(ceil(float(sig_ids.size()) / float(SIGNATURE_PAGE_SIZE))))
+	signature_page = clampi(signature_page, 0, total_sig_pages - 1)
+	var sig_start := signature_page * SIGNATURE_PAGE_SIZE
+	var sig_end := sig_start + SIGNATURE_PAGE_SIZE
+
+	if is_instance_valid(sig_prev_btn):
+		sig_prev_btn.visible = is_sig_cat
+		sig_prev_btn.text = "◀"
+	if is_instance_valid(sig_next_btn):
+		sig_next_btn.visible = is_sig_cat
+		sig_next_btn.text = "▶ %d/%d" % [signature_page + 1, total_sig_pages]
+
 	if deselect_tool_button:
 		deselect_tool_button.visible = (selected_category >= 0 and cur >= 0)
 
@@ -2260,21 +3293,49 @@ func _update_dock_ui() -> void:
 		var cat: int = int(info.get("category", 0))
 		var vouchers := int(inv.get(item_id, 0))
 		var is_special := bool(info.get("special_unlock", false))
-		var is_unlocked := (not is_special) or bool(unlocked_special_facilities.get(item_id, false)) or vouchers > 0
-		btn.visible = (selected_category == cat and is_unlocked)
+		var is_unlocked: bool = (not is_special) or bool(unlocked_special_facilities.get(item_id, false)) or vouchers > 0 or (item_id == FacilityCatalog.ItemId.STAFF_HOUSE and has_perk("staff_house"))
 
-		var cost := int(info.get("cost", 0))
+		var show_in_page := true
+		if cat == FacilityCatalog.Category.SIGNATURE:
+			var sig_idx := sig_ids.find(int(item_id))
+			show_in_page = (sig_idx >= sig_start and sig_idx < sig_end)
+
+		btn.visible = (selected_category == cat and is_unlocked and show_in_page)
+
+		var cost := grid_manager.get_item_cost(item_id)
 		var is_selected: bool = (cur == int(item_id))
-		if item_id == FacilityCatalog.ItemId.ERASE_TOOL:
-			btn.text = "Demolish"
-		elif vouchers > 0:
-			btn.text = "%s\nx%d" % [info["name"], vouchers]
+		var is_sig := FacilityCatalog.is_signature_item(item_id)
+		var already_built := is_sig and grid_manager.has_facility_of_type(item_id)
+
+		var cost_lbl := btn.get_node_or_null("VBoxContainer/CostLabel") as Label
+		if cost_lbl:
+			if item_id == FacilityCatalog.ItemId.ERASE_TOOL:
+				cost_lbl.text = "Demolish"
+				cost_lbl.add_theme_color_override("font_color", Color("fca5a5"))
+			elif already_built:
+				cost_lbl.text = "Built (1/1)"
+				cost_lbl.add_theme_color_override("font_color", Color("a7f3d0"))
+			elif vouchers > 0:
+				cost_lbl.text = "x%d Free" % vouchers
+				cost_lbl.add_theme_color_override("font_color", Color("86efac"))
+			elif cost == 0:
+				cost_lbl.text = "Free"
+				cost_lbl.add_theme_color_override("font_color", Color("86efac"))
+			else:
+				cost_lbl.text = FacilityCatalog.format_money(cost)
+				cost_lbl.add_theme_color_override("font_color", Color("fbbf24"))
+
+		var active_card_sb: StyleBoxFlat
+		if already_built:
+			active_card_sb = _make_card_stylebox(Color(0.14, 0.20, 0.18, 0.85), Color(0.45, 0.75, 0.60, 0.55), 10)
+		elif is_selected:
+			active_card_sb = _make_card_stylebox(Color(0.12, 0.32, 0.22, 0.98), Color(0.35, 0.95, 0.60, 1.0), 10)
 		else:
-			btn.text = "%s\n%s" % [info["name"], FacilityCatalog.format_money(cost)]
+			active_card_sb = _make_card_stylebox(Color(0.18, 0.17, 0.20, 0.95), Color(0.55, 0.50, 0.45, 0.40), 10)
+		btn.add_theme_stylebox_override("normal", active_card_sb)
+		btn.modulate = Color(0.75, 0.82, 0.78, 0.92) if already_built else Color.WHITE
 
-		btn.modulate = Color(0.65, 0.98, 0.72) if is_selected else Color.WHITE
-
-	var counts: Dictionary = {0: 0, 1: 0, 2: 0}
+	var counts: Dictionary = {0: 0, 1: 0, 2: 0, 3: 0}
 	for stf in active_staff:
 		if is_instance_valid(stf):
 			counts[int(stf.staff_type)] = int(counts.get(int(stf.staff_type), 0)) + 1
@@ -2282,10 +3343,35 @@ func _update_dock_ui() -> void:
 	for staff_id in staff_buttons.keys():
 		var sbtn: Button = staff_buttons[staff_id]
 		var sinfo := FacilityCatalog.get_staff_info(staff_id)
-		sbtn.visible = (selected_category == FacilityCatalog.Category.STAFF)
+		if staff_id == FacilityCatalog.StaffId.DRONE:
+			sbtn.visible = (selected_category == FacilityCatalog.Category.STAFF and has_perk("cleaning_drones"))
+		else:
+			sbtn.visible = (selected_category == FacilityCatalog.Category.STAFF)
+
 		var scaled_wage := roundi(float(sinfo.get("daily_wage", 1000)) * staff_wage_multiplier)
 		var wage_str := FacilityCatalog.format_money(scaled_wage)
-		sbtn.text = "%s (%d)\n%s/d" % [sinfo["name"], int(counts.get(staff_id, 0)), wage_str]
+
+		var count_lbl := sbtn.get_node_or_null("VBoxContainer/CountLabel") as Label
+		if count_lbl:
+			count_lbl.text = "Count: %d" % int(counts.get(staff_id, 0))
+
+		var wage_lbl := sbtn.get_node_or_null("VBoxContainer/WageLabel") as Label
+		if wage_lbl:
+			wage_lbl.text = "%s/d" % wage_str
+
+	if hint_label:
+		if cur >= 0:
+			if grid_manager.is_placeable_facility_tool(cur):
+				hint_label.text = "Rotate: [Q] / [E]  •  Left-click to place  •  Right-click to cancel"
+				hint_label.visible = true
+			elif grid_manager.is_path_or_gate_tool(cur) or cur == FacilityCatalog.ItemId.FENCE:
+				hint_label.text = "Drag or click to build  •  Right-click to cancel"
+				hint_label.visible = true
+			elif cur == FacilityCatalog.ItemId.ERASE_TOOL:
+				hint_label.text = "Click or drag over paths/facilities to demolish  •  Right-click to cancel"
+				hint_label.visible = true
+		else:
+			hint_label.visible = false
 
 func _setup_cozy_ui_theme() -> void:
 	var card_style := StyleBoxFlat.new()
@@ -2301,7 +3387,6 @@ func _setup_cozy_ui_theme() -> void:
 	for panel_path in [
 		"HUD/TopBar/LeftCard",
 		"HUD/TopBar/RightCard",
-		"HUD/BottomDock",
 		"HUD/OptionsPanel/Panel",
 		"HUD/DraftModal/Panel",
 		"HUD/GameOverPanel/Panel"
@@ -2310,6 +3395,22 @@ func _setup_cozy_ui_theme() -> void:
 			var pc := get_node(panel_path) as PanelContainer
 			if pc:
 				pc.add_theme_stylebox_override("panel", card_style)
+
+	# Dedicated cozy minimal floating dock with soft drop shadow
+	if has_node("HUD/BottomDock"):
+		var dock_sb := StyleBoxFlat.new()
+		dock_sb.bg_color = Color(0.11, 0.10, 0.13, 0.90) # Warm dark espresso
+		dock_sb.border_color = Color(0.85, 0.78, 0.68, 0.35)
+		dock_sb.set_border_width_all(1)
+		dock_sb.set_corner_radius_all(18)
+		dock_sb.shadow_color = Color(0, 0, 0, 0.40)
+		dock_sb.shadow_size = 14
+		dock_sb.shadow_offset = Vector2(0, 5)
+		dock_sb.content_margin_left = 12
+		dock_sb.content_margin_right = 12
+		dock_sb.content_margin_top = 8
+		dock_sb.content_margin_bottom = 8
+		(get_node("HUD/BottomDock") as PanelContainer).add_theme_stylebox_override("panel", dock_sb)
 
 	# LocationSelectPanel outer container is transparent so Mini Metro Location Cards float cleanly
 	if has_node("HUD/LocationSelectPanel/Panel"):

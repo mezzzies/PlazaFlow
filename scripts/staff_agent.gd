@@ -8,7 +8,8 @@ signal staff_guided_peep(peep: PeepAgent)
 enum StaffType {
 	JANITOR = 0,
 	PLAZA_STAFF = 1,
-	SECURITY = 2
+	SECURITY = 2,
+	DRONE = 3
 }
 
 enum StaffState {
@@ -22,8 +23,17 @@ enum StaffState {
 @export var staff_type: StaffType = StaffType.JANITOR
 @export var walk_speed: float = 2.85
 
-var state: StaffState = StaffState.PATROLLING
-var stamina: float = 100.0
+var state: StaffState = StaffState.SEEKING_REST
+var energy: float = 0.0 # Starts at 0.0, requiring initial rest
+const MAX_ENERGY: float = 100.0
+const IDLE_DRAIN_RATE: float = 0.5
+const WORK_DRAIN_RATE: float = 1.8
+
+var rest_facilities_visited: int = 0
+const REQUIRED_REST_STOPS: int = 2
+var last_rest_facility_ref: Variant = null
+var game_director_ref: Variant = null
+
 var work_timer: float = 0.0
 var task_cooldown: float = 0.0
 var walk_phase: float = 0.0
@@ -43,16 +53,28 @@ func _ready() -> void:
 	_build_visuals()
 	_update_badge()
 
-func setup_staff(type_id: StaffType, start_pos: Vector3) -> void:
+func setup_staff(type_id: StaffType, start_pos: Vector3, director: Variant = null) -> void:
 	staff_type = type_id
 	global_position = start_pos
-	stamina = 100.0
-	if staff_type == StaffType.JANITOR:
-		walk_speed = 2.65
-	elif staff_type == StaffType.PLAZA_STAFF:
-		walk_speed = 2.95
+	game_director_ref = director
+
+	if staff_type == StaffType.DRONE:
+		walk_speed = 4.2
+		energy = MAX_ENERGY
+		state = StaffState.PATROLLING
 	else:
-		walk_speed = 3.05
+		energy = 0.0 # Hired staff start exhausted and need to complete initial rest cycle
+		state = StaffState.SEEKING_REST
+		rest_facilities_visited = 0
+		if staff_type == StaffType.JANITOR:
+			walk_speed = 2.65
+		elif staff_type == StaffType.PLAZA_STAFF:
+			walk_speed = 2.95
+		else:
+			walk_speed = 3.05
+
+	if is_instance_valid(game_director_ref) and game_director_ref.has_perk("contract_labor"):
+		walk_speed *= 0.80
 
 	if is_inside_tree():
 		_build_visuals()
@@ -125,9 +147,10 @@ func assign_path_patrol(route: PackedVector2Array) -> void:
 func on_rest_facility_removed() -> void:
 	if state == StaffState.RESTING or state == StaffState.SEEKING_REST:
 		target_stall = null
-		state = StaffState.PATROLLING
+		state = StaffState.SEEKING_REST
 		global_position = Vector3(rest_access_tile.x, 0.0, rest_access_tile.y)
 		_update_badge()
+		request_staff_task.emit(self)
 
 func _trim_first_point() -> void:
 	if current_route.size() > 1:
@@ -135,19 +158,87 @@ func _trim_first_point() -> void:
 		if global_position.distance_to(p0) < 0.35:
 			route_index = 1
 
+func _drain_energy(amount: float) -> void:
+	if staff_type == StaffType.DRONE:
+		return
+	if is_instance_valid(game_director_ref):
+		if game_director_ref.has_perk("overtime_shift") and (staff_type == StaffType.PLAZA_STAFF or staff_type == StaffType.SECURITY):
+			return
+		if game_director_ref.has_perk("contract_labor"):
+			amount *= 1.5
+
+	energy = maxf(0.0, energy - amount)
+	if energy <= 0.0 and state != StaffState.RESTING and state != StaffState.SEEKING_REST:
+		rest_facilities_visited = 0
+		last_rest_facility_ref = null
+		state = StaffState.SEEKING_REST
+		target_stall = null
+		target_peep = null
+		_update_badge()
+		request_staff_task.emit(self)
+
+func _recover_energy(sim_delta: float) -> void:
+	var rate := 15.0
+	if _is_at_staff_house():
+		rate *= 2.5
+	if is_instance_valid(game_director_ref):
+		if game_director_ref.has_perk("energetic_staff"):
+			rate *= 1.54
+		if is_instance_valid(game_director_ref.grid_manager) and game_director_ref.grid_manager.has_facility_of_type(FacilityCatalog.ItemId.TEA_HOUSE):
+			rate *= 1.30
+
+	energy = minf(MAX_ENERGY, energy + rate * sim_delta)
+	_update_badge()
+
+	if energy >= MAX_ENERGY:
+		rest_facilities_visited += 1
+		if is_instance_valid(target_stall):
+			target_stall.unregister_staff_rest(self)
+			global_position = Vector3(rest_access_tile.x, 0.0, rest_access_tile.y)
+
+		if _is_at_staff_house() or rest_facilities_visited >= REQUIRED_REST_STOPS:
+			target_stall = null
+			last_rest_facility_ref = null
+			state = StaffState.PATROLLING
+			_update_badge()
+			request_staff_task.emit(self)
+		else:
+			# Needs a 2nd distinct relaxation facility visit
+			last_rest_facility_ref = target_stall
+			target_stall = null
+			energy = 0.0
+			state = StaffState.SEEKING_REST
+			_update_badge()
+			request_staff_task.emit(self)
+
+func _is_at_staff_house() -> bool:
+	return is_instance_valid(target_stall) and target_stall.has_method("is_staff_house") and target_stall.is_staff_house()
+
 func _process(delta: float) -> void:
 	var sim_speed := float(get_tree().get_meta("sim_speed", 1.0))
 	var sim_delta := delta * sim_speed
 	if sim_delta <= 0.0:
 		return
 
-	if staff_type == StaffType.JANITOR:
+	if state == StaffState.RESTING:
+		if visual_model:
+			visual_model.position.y = 0.0
+			visual_model.rotation_degrees.z = 0.0
+		_recover_energy(sim_delta)
+		return
+
+	if staff_type == StaffType.JANITOR or staff_type == StaffType.DRONE:
 		_process_janitor(sim_delta)
 	else:
 		_process_guide_or_security(sim_delta)
 
 func _process_janitor(sim_delta: float) -> void:
+	if state == StaffState.SEEKING_REST:
+		_process_route_movement(sim_delta, true)
+		return
+
 	if state == StaffState.WORKING_TASK:
+		_drain_energy(WORK_DRAIN_RATE * sim_delta)
 		work_timer -= sim_delta
 		if visual_model:
 			visual_model.rotation_degrees.y += sim_delta * 260.0
@@ -165,73 +256,51 @@ func _process_janitor(sim_delta: float) -> void:
 	if current_route.is_empty() or route_index >= current_route.size():
 		if state == StaffState.MOVING_TO_TASK:
 			state = StaffState.WORKING_TASK
-			work_timer = 1.0
+			work_timer = 0.8
 			_update_badge()
 		else:
+			_drain_energy(IDLE_DRAIN_RATE * sim_delta)
 			task_cooldown -= sim_delta
 			if task_cooldown <= 0.0:
-				task_cooldown = 0.6
+				task_cooldown = 0.5
 				request_staff_task.emit(self)
 		return
 
-	var pt := current_route[route_index]
-	var dest_3d := Vector3(pt.x, 0.0, pt.y)
-	var offset := dest_3d - global_position
-	offset.y = 0.0
-	var dist := offset.length()
-	var step := walk_speed * sim_delta
-
-	if dist <= step:
-		global_position = dest_3d
-		route_index += 1
-		if route_index >= current_route.size():
-			if state == StaffState.MOVING_TO_TASK:
-				state = StaffState.WORKING_TASK
-				work_timer = 1.0
-				_update_badge()
-			else:
-				task_cooldown = 0.4
+	if state == StaffState.MOVING_TO_TASK:
+		_drain_energy(WORK_DRAIN_RATE * sim_delta)
 	else:
-		global_position += offset.normalized() * step
-		_animate_walk(sim_delta)
+		_drain_energy(IDLE_DRAIN_RATE * sim_delta)
+
+	_process_route_movement(sim_delta, false)
 
 func _process_guide_or_security(sim_delta: float) -> void:
-	if state == StaffState.RESTING:
-		if visual_model:
-			visual_model.position.y = 0.0
-			visual_model.rotation_degrees.z = 0.0
-		var recharge_rate := 24.0 if is_instance_valid(target_stall) else 9.0
-		stamina = minf(100.0, stamina + recharge_rate * sim_delta)
-		_update_badge()
-		if stamina >= 100.0:
-			if is_instance_valid(target_stall):
-				target_stall.unregister_staff_rest(self)
-				global_position = Vector3(rest_access_tile.x, 0.0, rest_access_tile.y)
-			target_stall = null
-			state = StaffState.PATROLLING
-			_update_badge()
-			request_staff_task.emit(self)
+	if state == StaffState.SEEKING_REST:
+		_process_route_movement(sim_delta, true)
 		return
 
-	if state != StaffState.SEEKING_REST:
-		stamina = maxf(0.0, stamina - 1.8 * sim_delta)
-		if stamina <= 20.0:
-			state = StaffState.SEEKING_REST
-			target_peep = null
-			_update_badge()
-			request_staff_task.emit(self)
-			return
-
 	if state == StaffState.MOVING_TO_TASK:
-		if not is_instance_valid(target_peep) or target_peep.state != PeepAgent.AgentState.LOST:
+		_drain_energy(WORK_DRAIN_RATE * sim_delta)
+		var is_valid_thief := (
+			is_instance_valid(target_peep)
+			and target_peep.archetype == PeepAgent.Archetype.PICKPOCKET
+			and target_peep.is_fleeing_pickpocket
+		)
+		var is_valid_lost := (
+			is_instance_valid(target_peep)
+			and target_peep.state == PeepAgent.AgentState.LOST
+		)
+		if not is_valid_thief and not is_valid_lost:
 			target_peep = null
 			state = StaffState.PATROLLING
 			request_staff_task.emit(self)
 			return
 		if global_position.distance_to(target_peep.global_position) <= 1.25:
-			target_peep.guide_out_of_lost()
-			staff_guided_peep.emit(target_peep)
-			stamina = maxf(0.0, stamina - 14.0)
+			if is_valid_thief:
+				target_peep.show_unhappy_complaint(-1, "Busted! 👮")
+				target_peep.queue_free()
+			else:
+				target_peep.guide_out_of_lost()
+				staff_guided_peep.emit(target_peep)
 			target_peep = null
 			state = StaffState.PATROLLING
 			_update_badge()
@@ -239,14 +308,30 @@ func _process_guide_or_security(sim_delta: float) -> void:
 			return
 
 	if state == StaffState.PATROLLING:
+		# If security is on congested tile (>= 6 occupants), drain accelerated energy for Crowd Aura
+		var is_crowd_aura := false
+		if staff_type == StaffType.SECURITY and is_instance_valid(game_director_ref):
+			var occ: int = game_director_ref.grid_manager.path_network.get_tile_occupancy(get_current_grid_coords())
+			is_crowd_aura = (occ >= 6)
+		_drain_energy((WORK_DRAIN_RATE if is_crowd_aura else IDLE_DRAIN_RATE) * sim_delta)
+
 		task_cooldown -= sim_delta
 		if task_cooldown <= 0.0:
-			task_cooldown = 0.8
+			task_cooldown = 0.7
 			request_staff_task.emit(self)
 
 	if current_route.is_empty() or route_index >= current_route.size():
-		if state == StaffState.SEEKING_REST:
+		request_staff_task.emit(self)
+		return
+
+	_process_route_movement(sim_delta, false)
+
+func _process_route_movement(sim_delta: float, is_seeking_rest_route: bool) -> void:
+	if current_route.is_empty() or route_index >= current_route.size():
+		if is_seeking_rest_route:
 			state = StaffState.RESTING
+			if is_instance_valid(target_stall):
+				target_stall.register_staff_rest(self)
 			_update_badge()
 		else:
 			request_staff_task.emit(self)
@@ -263,10 +348,14 @@ func _process_guide_or_security(sim_delta: float) -> void:
 		global_position = target_3d
 		route_index += 1
 		if route_index >= current_route.size():
-			if state == StaffState.SEEKING_REST:
+			if is_seeking_rest_route:
 				state = StaffState.RESTING
 				if is_instance_valid(target_stall):
 					target_stall.register_staff_rest(self)
+				_update_badge()
+			elif state == StaffState.MOVING_TO_TASK and (staff_type == StaffType.JANITOR or staff_type == StaffType.DRONE):
+				state = StaffState.WORKING_TASK
+				work_timer = 0.8
 				_update_badge()
 			else:
 				request_staff_task.emit(self)
@@ -277,8 +366,12 @@ func _process_guide_or_security(sim_delta: float) -> void:
 func _animate_walk(sim_delta: float) -> void:
 	walk_phase += sim_delta * 10.5
 	if visual_model:
-		visual_model.position.y = absf(sin(walk_phase)) * 0.06
-		visual_model.rotation_degrees.z = sin(walk_phase) * 3.8
+		if staff_type == StaffType.DRONE:
+			visual_model.position.y = 0.35 + sin(walk_phase * 0.8) * 0.06
+			visual_model.rotation_degrees.y += sim_delta * 180.0
+		else:
+			visual_model.position.y = absf(sin(walk_phase)) * 0.06
+			visual_model.rotation_degrees.z = sin(walk_phase) * 3.8
 
 func _update_badge() -> void:
 	if not status_label:
@@ -287,5 +380,9 @@ func _update_badge() -> void:
 		status_label.visible = true
 		status_label.text = "💤"
 		status_label.modulate = Color(0.65, 0.90, 1.0)
+	elif state == StaffState.SEEKING_REST:
+		status_label.visible = true
+		status_label.text = "😓 Need Rest"
+		status_label.modulate = Color(1.0, 0.75, 0.45)
 	else:
 		status_label.visible = false

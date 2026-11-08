@@ -56,6 +56,7 @@ var current_tool: int = -1
 var interaction_enabled: bool = false
 var is_painting: bool = false
 var is_erasing: bool = false
+var game_director_ref: Variant = null
 
 var inventory: Dictionary = {}
 
@@ -63,6 +64,13 @@ var mat_pavement: StandardMaterial3D
 var mat_curb: StandardMaterial3D
 var mat_cursor_valid: StandardMaterial3D
 var mat_cursor_invalid: StandardMaterial3D
+
+var current_rotation: int = 0 # 0: South, 1: West, 2: North, 3: East
+var preview_blueprint_node: Node3D = null
+var preview_arrow_node: Node3D = null
+var mat_blueprint_valid: StandardMaterial3D
+var mat_blueprint_invalid: StandardMaterial3D
+var mat_arrow: StandardMaterial3D
 
 func _ready() -> void:
 	mat_pavement = ProceduralProps.get_mat("pavement_top", Color("8d7c70"), 0.86)
@@ -77,6 +85,28 @@ func _ready() -> void:
 	mat_cursor_invalid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat_cursor_invalid.albedo_color = Color(0.95, 0.35, 0.35, 0.48)
 	mat_cursor_invalid.roughness = 0.9
+
+	mat_blueprint_valid = StandardMaterial3D.new()
+	mat_blueprint_valid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat_blueprint_valid.albedo_color = Color(0.20, 0.88, 0.95, 0.55)
+	mat_blueprint_valid.roughness = 0.3
+	mat_blueprint_valid.emission_enabled = true
+	mat_blueprint_valid.emission = Color(0.15, 0.75, 0.90)
+	mat_blueprint_valid.emission_energy_multiplier = 0.45
+
+	mat_blueprint_invalid = StandardMaterial3D.new()
+	mat_blueprint_invalid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat_blueprint_invalid.albedo_color = Color(0.96, 0.32, 0.32, 0.55)
+	mat_blueprint_invalid.roughness = 0.3
+	mat_blueprint_invalid.emission_enabled = true
+	mat_blueprint_invalid.emission = Color(0.96, 0.25, 0.25)
+	mat_blueprint_invalid.emission_energy_multiplier = 0.45
+
+	mat_arrow = StandardMaterial3D.new()
+	mat_arrow.albedo_color = Color(0.20, 0.98, 0.75, 0.92)
+	mat_arrow.emission_enabled = true
+	mat_arrow.emission = Color(0.20, 0.98, 0.75)
+	mat_arrow.emission_energy_multiplier = 1.2
 
 	if ground_plane:
 		ground_plane.visible = false
@@ -113,7 +143,7 @@ func _ready() -> void:
 	if not default_locs.is_empty():
 		apply_location_scenario(default_locs[0])
 
-func apply_location_scenario(loc_data: Dictionary) -> void:
+func apply_location_scenario(loc_data: Dictionary, should_generate_gates: bool = false) -> void:
 	current_location_data = loc_data
 	grid_half_width = int(loc_data.get("grid_half_width", 9))
 	grid_half_height = int(loc_data.get("grid_half_height", 6))
@@ -132,7 +162,7 @@ func apply_location_scenario(loc_data: Dictionary) -> void:
 
 	obstacle_cells = loc_data.get("obstacles", {}).duplicate()
 	_build_grid_dots(dot_col)
-	reset_plaza_and_inventory()
+	reset_plaza_and_inventory(should_generate_gates)
 
 func _build_grid_dots(dot_col: Color) -> void:
 	for child in grid_dots_container.get_children():
@@ -203,7 +233,7 @@ func _process(delta: float) -> void:
 		elif dir_val < 0.0 and node.position.z < -z_lim:
 			node.position.z = z_lim
 
-func reset_plaza_and_inventory() -> void:
+func reset_plaza_and_inventory(should_generate_gates: bool = false) -> void:
 	for coords in placed_facilities.keys():
 		var stall: Node3D = placed_facilities[coords]
 		if is_instance_valid(stall):
@@ -232,20 +262,120 @@ func reset_plaza_and_inventory() -> void:
 
 	path_network.setup_plaza_grid(grid_half_width, grid_half_height, obstacle_cells, bridges_arr)
 
-	budget = int(current_location_data.get("starting_budget", 200000))
+	budget = FacilityCatalog.calculate_starting_budget(grid_half_width)
 	inventory.clear()
-	current_tool = -1
+	set_build_tool(-1)
 
-	# Build default straight path from Left Edge (-hw, 0) to Right Edge (hw, 0)
-	for gx in range(-grid_half_width, grid_half_width + 1):
-		register_fixed_anchor(Vector2i(gx, 0))
-
-	var extra_paths: Array = current_location_data.get("extra_paths", [])
-	for ep in extra_paths:
-		register_fixed_anchor(ep as Vector2i)
+	# Gates are only generated if explicitly requested (not during location select preview)
+	if should_generate_gates:
+		generate_initial_gates()
 
 	budget_changed.emit(budget)
 	inventory_changed.emit()
+
+func is_cell_empty_for_gate(coords: Vector2i) -> bool:
+	if not path_network.is_in_bounds(coords):
+		return false
+	if obstacle_cells.has(coords):
+		return false
+	if path_network.is_water_cell(coords):
+		return false
+	if locked_cells.has(coords):
+		return false
+	if placed_facilities.has(coords):
+		return false
+	if placed_tile_nodes.has(coords):
+		return false
+	if fence_nodes.has(coords):
+		return false
+	return true
+
+func generate_initial_gates() -> void:
+	# First gate pair generated only on left and right edge (road connected sides).
+	# Top and bottom edges are excluded.
+	# Both entry and exit can be on the same side or opposite sides.
+	var road_edge_cells: Array[Vector2i] = []
+	for y in range(-grid_half_height + 1, grid_half_height):
+		var cw := Vector2i(-grid_half_width, y)
+		if is_cell_empty_for_gate(cw):
+			road_edge_cells.append(cw)
+		var ce := Vector2i(grid_half_width, y)
+		if is_cell_empty_for_gate(ce):
+			road_edge_cells.append(ce)
+
+	road_edge_cells.shuffle()
+	if road_edge_cells.size() >= 2:
+		var entry_cell: Vector2i = road_edge_cells.pop_back()
+		var exit_cell: Vector2i = road_edge_cells.pop_back()
+		_place_fixed_gate(entry_cell, FacilityCatalog.ItemId.ENTRY_GATE)
+		_place_fixed_gate(exit_cell, FacilityCatalog.ItemId.EXIT_GATE)
+	elif not road_edge_cells.is_empty():
+		var entry_cell: Vector2i = road_edge_cells.pop_back()
+		_place_fixed_gate(entry_cell, FacilityCatalog.ItemId.ENTRY_GATE)
+
+func spawn_monday_gates(count: int = 1) -> Array[Vector2i]:
+	var spawned: Array[Vector2i] = []
+	# Gather empty perimeter edge tiles (including newly expanded top and bottom rows)
+	var perimeter_candidates: Array[Vector2i] = []
+	for x in range(-grid_half_width, grid_half_width + 1):
+		var cn := Vector2i(x, -grid_half_height)
+		if is_cell_empty_for_gate(cn):
+			perimeter_candidates.append(cn)
+		var cs := Vector2i(x, grid_half_height)
+		if is_cell_empty_for_gate(cs):
+			perimeter_candidates.append(cs)
+	for y in range(-grid_half_height + 1, grid_half_height):
+		var cw := Vector2i(-grid_half_width, y)
+		if is_cell_empty_for_gate(cw):
+			perimeter_candidates.append(cw)
+		var ce := Vector2i(grid_half_width, y)
+		if is_cell_empty_for_gate(ce):
+			perimeter_candidates.append(ce)
+
+	perimeter_candidates.shuffle()
+
+	# In case perimeter is fully occupied by player items, collect all remaining empty map tiles
+	var fallback_empty: Array[Vector2i] = []
+	if perimeter_candidates.size() < count:
+		for gx in range(-grid_half_width, grid_half_width + 1):
+			for gz in range(-grid_half_height, grid_half_height + 1):
+				var c := Vector2i(gx, gz)
+				if is_cell_empty_for_gate(c) and not perimeter_candidates.has(c):
+					fallback_empty.append(c)
+		fallback_empty.shuffle()
+
+	for _i in range(count):
+		var chosen_cell: Variant = null
+		if not perimeter_candidates.is_empty():
+			chosen_cell = perimeter_candidates.pop_back()
+		elif not fallback_empty.is_empty():
+			chosen_cell = fallback_empty.pop_back()
+
+		if chosen_cell != null:
+			var c: Vector2i = chosen_cell
+			var gate_type: int = FacilityCatalog.ItemId.ENTRY_GATE if randf() < 0.5 else FacilityCatalog.ItemId.EXIT_GATE
+			_place_fixed_gate(c, gate_type)
+			spawned.append(c)
+
+	return spawned
+
+func expand_location_height() -> void:
+	grid_half_height += 1
+	path_network.expand_grid_height(grid_half_height)
+
+	var pal: Dictionary = current_location_data.get("palette", {})
+	var dot_col: Color = pal.get("grid_dot", Color("d9c19b"))
+	_build_grid_dots(dot_col)
+
+	current_location_data["grid_half_height"] = grid_half_height
+	for child in city_props_container.get_children():
+		child.queue_free()
+	ambient_cars = ProceduralProps.build_city_environment(city_props_container, current_location_data)
+
+func _place_fixed_gate(coords: Vector2i, tile_type: int) -> void:
+	locked_cells[coords] = true
+	default_free_cells[coords] = true
+	_place_path_internal(coords, tile_type)
 
 func add_money(amount: int) -> void:
 	budget += amount
@@ -258,10 +388,40 @@ func spend_money(amount: int) -> bool:
 	budget_changed.emit(budget)
 	return true
 
+func has_facility_of_type(item_id: int) -> bool:
+	for stall in placed_facilities.values():
+		if is_instance_valid(stall) and (stall as StallController).stall_type == item_id:
+			return true
+	return false
+
+func get_item_cost(item_id: int) -> int:
+	var base_cost := FacilityCatalog.get_cost(item_id)
+	var mult := 1.0
+	if has_facility_of_type(FacilityCatalog.ItemId.TRIUMPH_ARCH):
+		if item_id == FacilityCatalog.ItemId.PATH_TILE or item_id == FacilityCatalog.ItemId.FENCE:
+			mult *= 1.25
+	if is_instance_valid(game_director_ref):
+		if game_director_ref.has_perk("cheap_paving"):
+			if item_id == FacilityCatalog.ItemId.PATH_TILE or item_id == FacilityCatalog.ItemId.FENCE:
+				mult *= 0.40
+		if game_director_ref.has_perk("reinforced_bollards"):
+			if item_id == FacilityCatalog.ItemId.PATH_TILE or item_id == FacilityCatalog.ItemId.ENTRY_GATE or item_id == FacilityCatalog.ItemId.EXIT_GATE:
+				mult *= 1.20
+		if game_director_ref.has_perk("cleaning_drones"):
+			var info := FacilityCatalog.get_item(item_id)
+			if int(info.get("category", -1)) == FacilityCatalog.Category.UTILITY:
+				mult *= 1.50
+	return roundi(float(base_cost) * mult)
+
+func get_item_refund(item_id: int) -> int:
+	if is_instance_valid(game_director_ref) and game_director_ref.has_perk("cheap_paving"):
+		return 0
+	return roundi(float(get_item_cost(item_id)) * 0.5)
+
 func can_afford_item(item_id: int) -> bool:
 	if int(inventory.get(item_id, 0)) > 0:
 		return true
-	return budget >= FacilityCatalog.get_cost(item_id)
+	return budget >= get_item_cost(item_id)
 
 func _pay_for_item(item_id: int) -> bool:
 	var vouchers := int(inventory.get(item_id, 0))
@@ -269,7 +429,7 @@ func _pay_for_item(item_id: int) -> bool:
 		inventory[item_id] = vouchers - 1
 		inventory_changed.emit()
 		return true
-	var cost := FacilityCatalog.get_cost(item_id)
+	var cost := get_item_cost(item_id)
 	if spend_money(cost):
 		inventory_changed.emit()
 		return true
@@ -277,6 +437,82 @@ func _pay_for_item(item_id: int) -> bool:
 
 func set_build_tool(tool_id: int) -> void:
 	current_tool = tool_id
+	current_rotation = 0
+	if is_instance_valid(preview_blueprint_node):
+		preview_blueprint_node.queue_free()
+		preview_blueprint_node = null
+		preview_arrow_node = null
+
+	if is_placeable_facility_tool(current_tool):
+		_create_blueprint_preview(current_tool)
+
+func _create_blueprint_preview(tool_id: int) -> void:
+	preview_blueprint_node = Node3D.new()
+	preview_blueprint_node.name = "BlueprintPreview"
+	add_child(preview_blueprint_node)
+
+	var vis := ProceduralProps.build_facility_visual(tool_id)
+	preview_blueprint_node.add_child(vis)
+
+	var size := FacilityCatalog.get_facility_size(tool_id)
+	preview_arrow_node = Node3D.new()
+	preview_arrow_node.name = "EntranceIndicator"
+	# Local entrance indicator at front (+Z face)
+	var f_dist: float = (float(size.y) * 0.5) + 0.38
+	preview_arrow_node.position = Vector3(0.0, 0.08, f_dist)
+
+	var arrow_mesh := PrismMesh.new()
+	arrow_mesh.size = Vector3(0.36, 0.32, 0.04)
+	arrow_mesh.material = mat_arrow
+	var arrow_mi := MeshInstance3D.new()
+	arrow_mi.mesh = arrow_mesh
+	arrow_mi.rotation_degrees = Vector3(-90, 0, 0) # Points inward towards building (-Z)
+	preview_arrow_node.add_child(arrow_mi)
+
+	var shaft_mesh := BoxMesh.new()
+	shaft_mesh.size = Vector3(0.12, 0.04, 0.22)
+	shaft_mesh.material = mat_arrow
+	var shaft_mi := MeshInstance3D.new()
+	shaft_mi.mesh = shaft_mesh
+	shaft_mi.position = Vector3(0, 0, 0.16)
+	preview_arrow_node.add_child(shaft_mi)
+
+	preview_blueprint_node.add_child(preview_arrow_node)
+	preview_blueprint_node.visible = false
+
+func _apply_blueprint_materials(node: Node, mat: Material) -> void:
+	if node == preview_arrow_node:
+		return # Entrance indicator retains its bright vibrant cyan material
+	if node is MeshInstance3D:
+		(node as MeshInstance3D).material_override = mat
+	for ch in node.get_children():
+		_apply_blueprint_materials(ch, mat)
+
+func rotate_current_tool(clockwise: bool = true) -> void:
+	if clockwise:
+		current_rotation = (current_rotation + 1) % 4
+	else:
+		current_rotation = (current_rotation + 3) % 4
+
+	if is_instance_valid(preview_blueprint_node):
+		preview_blueprint_node.rotation.y = float(current_rotation) * (PI / 2.0)
+
+	var vp := get_viewport()
+	if vp:
+		_update_hover_and_drag(vp.get_mouse_position())
+
+func get_tool_footprint(coords: Vector2i, item_id: int, rot_idx: int = -1) -> Array[Vector2i]:
+	var r := current_rotation if rot_idx < 0 else rot_idx
+	var size := FacilityCatalog.get_rotated_size(item_id, r)
+	var cells: Array[Vector2i] = []
+	for dx in range(size.x):
+		for dy in range(size.y):
+			cells.append(coords + Vector2i(dx, dy))
+	return cells
+
+func get_tool_entrance_coords(coords: Vector2i, item_id: int, rot_idx: int) -> Vector2i:
+	var rot_size := FacilityCatalog.get_rotated_size(item_id, rot_idx)
+	return coords + StallController.calculate_entrance_offset(rot_size, rot_idx)
 
 func add_inventory_item(tool_id: int, amount: int) -> void:
 	inventory[tool_id] = int(inventory.get(tool_id, 0)) + amount
@@ -292,14 +528,27 @@ func is_path_or_gate_tool(tool_id: int) -> bool:
 func is_placeable_facility_tool(tool_id: int) -> bool:
 	return (
 		(tool_id >= FacilityCatalog.ItemId.FOOD_SHOP and tool_id <= FacilityCatalog.ItemId.LAMP_POST)
-		or (tool_id >= FacilityCatalog.ItemId.FLOWER_GARDEN and tool_id <= FacilityCatalog.ItemId.STREET_STAGE)
+		or (tool_id >= FacilityCatalog.ItemId.FLOWER_GARDEN and tool_id <= FacilityCatalog.ItemId.DIAMOND_PAVILION)
 	)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not interaction_enabled:
 		if hover_cursor:
 			hover_cursor.visible = false
+		if is_instance_valid(preview_blueprint_node):
+			preview_blueprint_node.visible = false
 		return
+
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key := (event as InputEventKey).keycode
+		if key == KEY_Q:
+			rotate_current_tool(false)
+			get_viewport().set_input_as_handled()
+			return
+		elif key == KEY_E or key == KEY_R:
+			rotate_current_tool(true)
+			get_viewport().set_input_as_handled()
+			return
 
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -308,9 +557,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			if is_painting:
 				_apply_action_at_mouse(mb.position, false)
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
-			is_erasing = mb.pressed
-			if is_erasing:
-				_apply_action_at_mouse(mb.position, true)
+			if mb.pressed:
+				if current_tool >= 0:
+					set_build_tool(-1)
+					if is_instance_valid(game_director_ref):
+						game_director_ref._update_dock_ui()
+					get_viewport().set_input_as_handled()
+					return
+				else:
+					is_erasing = true
+					_apply_action_at_mouse(mb.position, true)
+			else:
+				is_erasing = false
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		_update_hover_and_drag(mm.position)
@@ -320,18 +578,34 @@ func _update_hover_and_drag(screen_pos: Vector2) -> void:
 	if coords_variant == null:
 		if hover_cursor:
 			hover_cursor.visible = false
+		if is_instance_valid(preview_blueprint_node):
+			preview_blueprint_node.visible = false
 		return
 
 	var coords: Vector2i = coords_variant
 	var erasing := is_erasing or current_tool == FacilityCatalog.ItemId.ERASE_TOOL
-	if hover_cursor:
-		if current_tool < 0 and not is_erasing:
+	var can_act := _can_apply_tool_at(coords, erasing)
+
+	if is_placeable_facility_tool(current_tool) and not erasing:
+		if hover_cursor:
 			hover_cursor.visible = false
-		else:
-			hover_cursor.visible = true
-			hover_cursor.global_position = Vector3(coords.x, 0.07, coords.y)
-			var can_act := _can_apply_tool_at(coords, erasing)
-			hover_cursor.material_override = mat_cursor_valid if can_act else mat_cursor_invalid
+		if is_instance_valid(preview_blueprint_node):
+			preview_blueprint_node.visible = true
+			var rot_size := FacilityCatalog.get_rotated_size(current_tool, current_rotation)
+			var center_offset := Vector3(float(rot_size.x - 1) * 0.5, 0.05, float(rot_size.y - 1) * 0.5)
+			preview_blueprint_node.global_position = Vector3(coords.x, 0.05, coords.y) + center_offset
+			preview_blueprint_node.rotation.y = float(current_rotation) * (PI / 2.0)
+			_apply_blueprint_materials(preview_blueprint_node, mat_blueprint_valid if can_act else mat_blueprint_invalid)
+	else:
+		if is_instance_valid(preview_blueprint_node):
+			preview_blueprint_node.visible = false
+		if hover_cursor:
+			if current_tool < 0 and not is_erasing:
+				hover_cursor.visible = false
+			else:
+				hover_cursor.visible = true
+				hover_cursor.global_position = Vector3(coords.x, 0.07, coords.y)
+				hover_cursor.material_override = mat_cursor_valid if can_act else mat_cursor_invalid
 
 	if not erasing and current_tool < 0:
 		return
@@ -362,18 +636,37 @@ func _can_apply_tool_at(coords: Vector2i, erasing: bool) -> bool:
 	if current_tool < 0:
 		return false
 
-	if obstacle_cells.has(coords) or locked_cells.has(coords) or placed_facilities.has(coords) or fence_nodes.has(coords):
-		return false
-
 	if is_path_or_gate_tool(current_tool):
+		if obstacle_cells.has(coords) or locked_cells.has(coords) or placed_facilities.has(coords) or fence_nodes.has(coords):
+			return false
 		if placed_tile_nodes.has(coords) and path_network.get_tile_type(coords) == current_tool:
 			return false
 		return can_afford_item(current_tool)
 	elif current_tool == FacilityCatalog.ItemId.FENCE:
+		if obstacle_cells.has(coords) or locked_cells.has(coords) or placed_facilities.has(coords) or fence_nodes.has(coords):
+			return false
 		return not placed_tile_nodes.has(coords) and can_afford_item(FacilityCatalog.ItemId.FENCE)
 	elif is_placeable_facility_tool(current_tool):
-		if placed_tile_nodes.has(coords):
+		# Signature Category rule: only 1 per item can exist in the park!
+		if FacilityCatalog.is_signature_item(current_tool) and has_facility_of_type(current_tool):
 			return false
+
+		var footprint := get_tool_footprint(coords, current_tool)
+		for c in footprint:
+			if not path_network.is_in_bounds(c):
+				return false
+			if obstacle_cells.has(c) or locked_cells.has(c) or placed_facilities.has(c) or fence_nodes.has(c) or placed_tile_nodes.has(c):
+				return false
+			if path_network.is_water_cell(c):
+				return false
+
+		# Entrance cell check: must be in bounds and not water/obstacle
+		var ent_c := get_tool_entrance_coords(coords, current_tool, current_rotation)
+		if not path_network.is_in_bounds(ent_c):
+			return false
+		if obstacle_cells.has(ent_c) or path_network.is_water_cell(ent_c):
+			return false
+
 		return can_afford_item(current_tool)
 	return false
 
@@ -429,7 +722,7 @@ func remove_tile_at(coords: Vector2i) -> void:
 		clean_trash_on_tile(coords)
 		_refresh_neighbors_only(coords)
 		if not default_free_cells.has(coords) and old_type >= 0:
-			add_money(FacilityCatalog.get_refund(old_type))
+			add_money(get_item_refund(old_type))
 		default_free_cells.erase(coords)
 		inventory_changed.emit()
 
@@ -452,7 +745,7 @@ func remove_fence_at(coords: Vector2i) -> void:
 	fence_nodes.erase(coords)
 	path_network.clear_cell_impassable(coords)
 	_refresh_fence_neighbors_only(coords)
-	add_money(FacilityCatalog.get_refund(FacilityCatalog.ItemId.FENCE))
+	add_money(get_item_refund(FacilityCatalog.ItemId.FENCE))
 	inventory_changed.emit()
 
 func _refresh_fence_and_neighbors(coords: Vector2i) -> void:
@@ -495,30 +788,48 @@ func _place_facility_at(coords: Vector2i, item_id: int) -> void:
 	if not _pay_for_item(item_id):
 		return
 
-	path_network.set_cell_impassable(coords, false)
+	var rot_size := FacilityCatalog.get_rotated_size(item_id, current_rotation)
+	var footprint := get_tool_footprint(coords, item_id, current_rotation)
+	for c in footprint:
+		path_network.set_cell_impassable(c, false)
+
 	var stall_node := stall_scene.instantiate() as StallController
 	facilities_container.add_child(stall_node)
-	stall_node.setup_facility(item_id, coords)
+	stall_node.setup_facility(item_id, coords, current_rotation, rot_size, footprint)
 	stall_node.set_meta("item_id", item_id)
-	placed_facilities[coords] = stall_node
 
-	_refresh_neighbors_only(coords)
+	for c in footprint:
+		placed_facilities[c] = stall_node
+		_refresh_neighbors_only(c)
+
 	facility_placed.emit(stall_node)
+
+	# Auto-deselect Signature item after placing so it cannot be placed again
+	if FacilityCatalog.is_signature_item(item_id):
+		set_build_tool(-1)
+		if is_instance_valid(game_director_ref):
+			game_director_ref._update_dock_ui()
 
 func _remove_facility_at(coords: Vector2i) -> void:
 	if not placed_facilities.has(coords):
 		return
 	var stall_node: StallController = placed_facilities[coords]
 	var item_id: int = int(stall_node.get_meta("item_id", stall_node.stall_type))
+	var occ_cells := stall_node.occupied_cells.duplicate()
+	if occ_cells.is_empty():
+		occ_cells.append(coords)
 
 	stall_node.release_all_waiting_peeps()
-	placed_facilities.erase(coords)
-	path_network.clear_cell_impassable(coords)
+
+	for c in occ_cells:
+		placed_facilities.erase(c)
+		path_network.clear_cell_impassable(c)
+		_refresh_neighbors_only(c)
+
 	facility_removed.emit(stall_node)
 	stall_node.queue_free()
 
-	_refresh_neighbors_only(coords)
-	add_money(FacilityCatalog.get_refund(item_id))
+	add_money(get_item_refund(item_id))
 	inventory_changed.emit()
 
 # --- Floor Trash Management ---
@@ -633,9 +944,9 @@ func _rebuild_single_tile_mesh(coords: Vector2i) -> void:
 
 	var tile_type := path_network.get_tile_type(coords)
 	if tile_type == FacilityCatalog.ItemId.ENTRY_GATE:
-		ProceduralProps.build_gate_tile_overlay(root, true, coords.x)
+		ProceduralProps.build_gate_tile_overlay(root, true, coords, grid_half_width, grid_half_height)
 	elif tile_type == FacilityCatalog.ItemId.EXIT_GATE:
-		ProceduralProps.build_gate_tile_overlay(root, false, coords.x)
+		ProceduralProps.build_gate_tile_overlay(root, false, coords, grid_half_width, grid_half_height)
 
 func _screen_to_grid(screen_pos: Vector2) -> Variant:
 	var cam := get_viewport().get_camera_3d()

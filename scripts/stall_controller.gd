@@ -26,21 +26,51 @@ var is_overloaded: bool = false
 var stored_trash: int = 0
 var max_trash_capacity: int = 15
 
+var facility_size: Vector2i = Vector2i(1, 1)
+var rotation_idx: int = 0
+var entrance_offset: Vector2i = Vector2i(0, 1)
+var occupied_cells: Array[Vector2i] = []
+
+static func calculate_entrance_offset(rot_size: Vector2i, rot: int) -> Vector2i:
+	var mid_x := int((rot_size.x - 1) / 2)
+	var mid_y := int((rot_size.y - 1) / 2)
+	match posmod(rot, 4):
+		0: # South (+Z)
+			return Vector2i(mid_x, rot_size.y)
+		1: # East (+X, when rotated +90 deg around Y)
+			return Vector2i(rot_size.x, mid_y)
+		2: # North (-Z)
+			return Vector2i(mid_x, -1)
+		3: # West (-X, when rotated +270 deg around Y)
+			return Vector2i(-1, mid_y)
+	return Vector2i(mid_x, rot_size.y)
+
+func get_entrance_coords() -> Vector2i:
+	return grid_coords + entrance_offset
+
 func _ready() -> void:
-	global_position = Vector3(grid_coords.x, 0.0, grid_coords.y)
+	var center_offset := Vector3(float(facility_size.x - 1) * 0.5, 0.0, float(facility_size.y - 1) * 0.5)
+	global_position = Vector3(grid_coords.x, 0.0, grid_coords.y) + center_offset
+	rotation.y = float(rotation_idx) * (PI / 2.0)
 	_apply_catalog_stats()
 	_rebuild_visual()
 	_update_patience_ui(0.0)
 
-func setup_facility(item_id: int, coords: Vector2i) -> void:
+func setup_facility(item_id: int, coords: Vector2i, rot_idx: int = 0, size: Vector2i = Vector2i(1, 1), occ_cells: Array[Vector2i] = []) -> void:
 	stall_type = item_id
 	grid_coords = coords
+	rotation_idx = rot_idx
+	facility_size = size
+	occupied_cells = occ_cells if not occ_cells.is_empty() else [coords]
+	entrance_offset = calculate_entrance_offset(facility_size, rotation_idx)
 	_apply_catalog_stats()
 
-	if is_inside_tree():
-		global_position = Vector3(grid_coords.x, 0.0, grid_coords.y)
-		_rebuild_visual()
-		_update_patience_ui(0.0)
+	var center_offset := Vector3(float(facility_size.x - 1) * 0.5, 0.0, float(facility_size.y - 1) * 0.5)
+	global_position = Vector3(grid_coords.x, 0.0, grid_coords.y) + center_offset
+	rotation.y = float(rotation_idx) * (PI / 2.0)
+
+	_rebuild_visual()
+	_update_patience_ui(0.0)
 
 func _apply_catalog_stats() -> void:
 	var info := FacilityCatalog.get_item(stall_type)
@@ -65,16 +95,51 @@ func is_comfort_facility() -> bool:
 		or stall_type == FacilityCatalog.ItemId.BENCH
 		or stall_type == FacilityCatalog.ItemId.FLOWER_GARDEN
 		or stall_type == FacilityCatalog.ItemId.DUCK_POND
+		or stall_type == FacilityCatalog.ItemId.STREET_STAGE
+		or stall_type == FacilityCatalog.ItemId.VINTAGE_CAROUSEL
+		or stall_type == FacilityCatalog.ItemId.FERRIS_WHEEL
+		or stall_type == FacilityCatalog.ItemId.ZEN_SHRINE
+		or stall_type == FacilityCatalog.ItemId.WISHING_WELL
+		or stall_type == FacilityCatalog.ItemId.CYBER_ARCADE
+		or stall_type == FacilityCatalog.ItemId.BOTANICAL_DOME
+		or stall_type == FacilityCatalog.ItemId.PLANETARIUM
+		or stall_type == FacilityCatalog.ItemId.SKATE_BOWL
+		or stall_type == FacilityCatalog.ItemId.OBSERVATION_TOWER
+		or stall_type == FacilityCatalog.ItemId.CIRCUS_TENT
+		or stall_type == FacilityCatalog.ItemId.STEAM_TRAIN
+		or stall_type == FacilityCatalog.ItemId.DIAMOND_PAVILION
 	)
+
+func is_dining_facility() -> bool:
+	return (
+		stall_type == FacilityCatalog.ItemId.FOOD_SHOP
+		or stall_type == FacilityCatalog.ItemId.DRINK_STALL
+		or stall_type == FacilityCatalog.ItemId.COFFEE_ROASTER
+		or stall_type == FacilityCatalog.ItemId.GOLDEN_MONOLITH
+		or stall_type == FacilityCatalog.ItemId.GELATO_PAVILION
+		or stall_type == FacilityCatalog.ItemId.BIERGARTEN
+		or stall_type == FacilityCatalog.ItemId.TEA_HOUSE
+	)
+
+func is_staff_house() -> bool:
+	return stall_type == FacilityCatalog.ItemId.STAFF_HOUSE
+
+func is_relaxation_facility() -> bool:
+	return is_comfort_facility() or is_dining_facility() or is_staff_house() or stall_type == FacilityCatalog.ItemId.SPA_BATHHOUSE
 
 func is_trashcan() -> bool:
 	return stall_type == FacilityCatalog.ItemId.TRASHCAN
 
 func is_info_kiosk() -> bool:
-	return stall_type == FacilityCatalog.ItemId.INFO_KIOSK or stall_type == FacilityCatalog.ItemId.DUCK_POND
+	return (
+		stall_type == FacilityCatalog.ItemId.INFO_KIOSK
+		or stall_type == FacilityCatalog.ItemId.DUCK_POND
+		or stall_type == FacilityCatalog.ItemId.GRAND_CLOCKTOWER
+		or stall_type == FacilityCatalog.ItemId.OBSERVATION_TOWER
+	)
 
 func is_lamp_post() -> bool:
-	return stall_type == FacilityCatalog.ItemId.LAMP_POST
+	return stall_type == FacilityCatalog.ItemId.LAMP_POST or stall_type == FacilityCatalog.ItemId.PLANETARIUM
 
 func can_accept_trash() -> bool:
 	return is_trashcan() and stored_trash < max_trash_capacity
@@ -179,13 +244,20 @@ func serve_peep(peep: Node3D) -> void:
 	_update_patience_ui(overload_timer / overload_grace_period)
 
 func _arrange_queue_positions() -> void:
+	var ent := get_entrance_coords()
+	var ent_world := Vector3(ent.x, 0.0, ent.y)
+	var forward := Vector3(entrance_offset.x, 0.0, entrance_offset.y).normalized()
+	if forward.length_squared() < 0.1:
+		forward = Vector3(0, 0, 1)
+	var side := Vector3(-forward.z, 0.0, forward.x)
+
 	for i in range(waiting_peeps.size()):
 		var peep := waiting_peeps[i]
 		if is_instance_valid(peep):
-			var row := i / 3
-			var col := i % 3
-			var offset := Vector3(-0.26 + col * 0.26, 0.0, 0.34 + row * 0.24)
-			peep.global_position = global_position + offset
+			var row := i / 2
+			var col := i % 2
+			var q_offset := (side * (-0.16 + col * 0.32)) + (forward * (float(row) * 0.32))
+			peep.global_position = ent_world + q_offset
 
 func _update_patience_ui(progress: float) -> void:
 	if not has_node("PatienceLabel"):

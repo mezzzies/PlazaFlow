@@ -43,7 +43,7 @@ static func add_cylinder(parent: Node3D, top_r: float, bot_r: float, height: flo
 	parent.add_child(mi)
 	return mi
 
-static func add_sphere(parent: Node3D, radius: float, height: float, pos: Vector3, mat: Material) -> MeshInstance3D:
+static func add_sphere(parent: Node3D, radius: float, height: float, pos: Vector3, mat: Material, rot_deg: Vector3 = Vector3.ZERO) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
@@ -53,6 +53,7 @@ static func add_sphere(parent: Node3D, radius: float, height: float, pos: Vector
 	mesh.material = mat
 	mi.mesh = mesh
 	mi.position = pos
+	mi.rotation_degrees = rot_deg
 	parent.add_child(mi)
 	return mi
 
@@ -441,70 +442,461 @@ static func build_facility_visual(facility_type: int) -> Node3D:
 		add_night_lamp(root, Vector3(0, 1.35, 0), Color(1.0, 0.86, 0.56), 5.8, 1.15)
 
 	elif facility_type == 13:
-		# 13 = FLOWER GARDEN: Lush circular botanical bed with stone birdbath, colorful blooms & garden bench
-		var soil_mat := get_mat("fg_soil", Color("5e432d"))
-		var leaf_mat := get_mat("fg_leaf", Color("5da65e"))
-		var pink_flw := get_mat("fg_pink", Color("f27d9b"))
-		var gold_flw := get_mat("fg_gold", Color("f7c948"))
-		var lav_flw := get_mat("fg_lav", Color("a77de8"))
-		var stone_mat := get_mat("fg_stone", Color("e4dacb"))
+		# 13 = FLOWER GARDEN: Grand 2x2 botanical park with tiered stone fountain, lush rose rings & garden lamps
+		var curb_stone := get_mat("fg_curb", Color("8a7b6e"), 0.88)
+		var soil_mat := get_mat("fg_soil", Color("4e3522"), 0.95)
+		var leaf_mat := get_mat("fg_leaf", Color("3d8b4b"), 0.85)
+		var rose_pink := get_mat("fg_pink", Color("f45d82"), 0.70)
+		var gold_bloom := get_mat("fg_gold", Color("fbbf24"), 0.65)
+		var lav_bloom := get_mat("fg_lav", Color("a855f7"), 0.65)
+		var white_bloom := get_mat("fg_white", Color("f8fafc"), 0.60)
+		var fountain_stone := get_mat("fg_fstone", Color("dcd6cd"), 0.75)
+		var water_basin := get_mat("fg_fwater", Color("38bdf8"), 0.25)
 
-		add_cylinder(root, 0.40, 0.42, 0.08, Vector3(0, 0.08, 0), soil_mat, 18)
-		# Central birdbath
-		add_cylinder(root, 0.09, 0.12, 0.34, Vector3(0, 0.25, 0), stone_mat, 12)
-		add_cylinder(root, 0.22, 0.18, 0.06, Vector3(0, 0.43, 0), stone_mat, 14)
-		# Ring of bushes and colorful flowers
-		var flw_mats: Array[StandardMaterial3D] = [pink_flw, gold_flw, lav_flw]
-		for i in range(6):
-			var ang := float(i) * (TAU / 6.0)
-			var bx := cos(ang) * 0.26
-			var bz := sin(ang) * 0.26
-			add_sphere(root, 0.13, 0.18, Vector3(bx, 0.17, bz), leaf_mat)
-			add_sphere(root, 0.065, 0.10, Vector3(bx, 0.27, bz), flw_mats[i % 3])
-		add_night_lamp(root, Vector3(0, 0.65, 0), Color(1.0, 0.88, 0.66), 3.8, 0.9)
+		# 2x2 Outer stone curb rim and rich soil bed
+		add_cylinder(root, 0.92, 0.94, 0.08, Vector3(0, 0.04, 0), curb_stone, 28)
+		add_cylinder(root, 0.86, 0.88, 0.09, Vector3(0, 0.05, 0), soil_mat, 28)
+
+		# Tiered central water fountain
+		add_cylinder(root, 0.32, 0.34, 0.16, Vector3(0, 0.13, 0), fountain_stone, 20)
+		add_cylinder(root, 0.28, 0.28, 0.04, Vector3(0, 0.22, 0), water_basin, 18)
+		add_cylinder(root, 0.10, 0.13, 0.32, Vector3(0, 0.35, 0), fountain_stone, 14)
+		add_cylinder(root, 0.22, 0.18, 0.06, Vector3(0, 0.52, 0), fountain_stone, 16)
+		add_sphere(root, 0.065, 0.10, Vector3(0, 0.60, 0), water_basin)
+
+		# Outer floral ring (10 vibrant bushes with blooms)
+		var flw_palette: Array[StandardMaterial3D] = [rose_pink, gold_bloom, lav_bloom, white_bloom]
+		for i in range(10):
+			var ang := float(i) * (TAU / 10.0)
+			var r := 0.68
+			var bx := cos(ang) * r
+			var bz := sin(ang) * r
+			add_sphere(root, 0.16, 0.22, Vector3(bx, 0.16, bz), leaf_mat)
+			add_sphere(root, 0.075, 0.12, Vector3(bx, 0.28, bz), flw_palette[i % 4])
+
+		# Inner floral accents (6 bushes)
+		for j in range(6):
+			var ang2 := float(j) * (TAU / 6.0) + 0.3
+			var r2 := 0.46
+			var ix := cos(ang2) * r2
+			var iz := sin(ang2) * r2
+			add_sphere(root, 0.12, 0.17, Vector3(ix, 0.15, iz), leaf_mat)
+			add_sphere(root, 0.06, 0.09, Vector3(ix, 0.25, iz), flw_palette[(j + 2) % 4])
+
+		# Two cozy garden path lamps
+		add_cylinder(root, 0.02, 0.025, 0.62, Vector3(-0.68, 0.34, 0.30), curb_stone, 8)
+		add_sphere(root, 0.05, 0.08, Vector3(-0.68, 0.66, 0.30), gold_bloom)
+		add_night_lamp(root, Vector3(-0.68, 0.66, 0.30), Color(1.0, 0.88, 0.65), 4.2, 1.0)
+
+		add_cylinder(root, 0.02, 0.025, 0.62, Vector3(0.68, 0.34, -0.30), curb_stone, 8)
+		add_sphere(root, 0.05, 0.08, Vector3(0.68, 0.66, -0.30), gold_bloom)
+		add_night_lamp(root, Vector3(0.68, 0.66, -0.30), Color(1.0, 0.88, 0.65), 4.2, 1.0)
 
 	elif facility_type == 14:
-		# 14 = DUCK POND: Cozy miniature pond with stone rim, lily pads & 2 little yellow ducks
-		var water_mat := get_mat("dp_water", Color("6bc2d9"), 0.30)
-		var lily_mat := get_mat("dp_lily", Color("58a85c"))
-		var duck_mat := get_mat("dp_duck", Color("f7d046"))
-		var beak_mat := get_mat("dp_beak", Color("e8703a"))
+		# 14 = DUCK POND (3x2): Scenic rectangular lake with natural stone embankment, lily pads & swimming ducks
+		var rim_stone := get_mat("dp_stone", Color("7c756d"), 0.85)
+		var water_mat := get_mat("dp_water", Color("42a5c2"), 0.24)
+		var lily_mat := get_mat("dp_lily", Color("489c54"), 0.8)
+		var duck_yellow := get_mat("dp_duck", Color("facc15"), 0.6)
+		var duck_white := get_mat("dp_dwhite", Color("f8fafc"), 0.6)
+		var beak_orange := get_mat("dp_beak", Color("ea580c"), 0.7)
+		var dock_wood := get_mat("dp_wood", Color("784c28"), 0.85)
 
-		add_cylinder(root, 0.41, 0.42, 0.06, Vector3(0, 0.075, 0), water_mat, 20)
-		add_cylinder(root, 0.10, 0.10, 0.015, Vector3(-0.16, 0.11, -0.10), lily_mat, 10)
-		add_cylinder(root, 0.09, 0.09, 0.015, Vector3(0.18, 0.11, 0.14), lily_mat, 10)
-		# Two little ducks
-		for dpos in [Vector3(-0.08, 0.14, 0.08), Vector3(0.12, 0.14, -0.08)]:
-			add_sphere(root, 0.075, 0.10, dpos, duck_mat)
-			add_sphere(root, 0.05, 0.09, dpos + Vector3(0.04, 0.06, 0.0), duck_mat)
-			add_box(root, Vector3(0.04, 0.02, 0.03), dpos + Vector3(0.08, 0.06, 0.0), beak_mat)
-		add_night_lamp(root, Vector3(0, 0.58, 0), Color(0.76, 0.94, 1.0), 3.6, 0.85)
+		# 3x2 Rectangular Stone Rim & Azure Water Basin
+		add_box(root, Vector3(2.78, 0.08, 1.78), Vector3(0, 0.04, 0), rim_stone)
+		add_box(root, Vector3(2.54, 0.07, 1.54), Vector3(0, 0.055, 0), water_mat)
+
+		# Wooden viewing pier / dock on the front edge
+		add_box(root, Vector3(0.56, 0.07, 0.42), Vector3(0.0, 0.09, 0.68), dock_wood)
+		add_cylinder(root, 0.035, 0.035, 0.18, Vector3(-0.22, 0.11, 0.82), dock_wood, 8)
+		add_cylinder(root, 0.035, 0.035, 0.18, Vector3(0.22, 0.11, 0.82), dock_wood, 8)
+
+		# Scattered natural lily pads with mini blossoms across the 3x2 basin
+		var lily_positions: Array[Vector3] = [
+			Vector3(-0.88, 0.095, -0.36),
+			Vector3(-0.35, 0.095, 0.34),
+			Vector3(0.45, 0.095, -0.42),
+			Vector3(0.86, 0.095, 0.22),
+			Vector3(-0.72, 0.095, 0.18),
+			Vector3(0.15, 0.095, -0.18)
+		]
+		for lp in lily_positions:
+			add_cylinder(root, 0.12, 0.12, 0.015, lp, lily_mat, 12)
+			add_sphere(root, 0.038, 0.05, lp + Vector3(0, 0.02, 0), get_mat("dp_flw", Color("fda4af")))
+
+		# 4 cute swimming ducks across the 3x2 lake
+		var duck_configs: Array[Dictionary] = [
+			{"pos": Vector3(-0.55, 0.11, -0.15), "rot": -25.0, "mat": duck_yellow},
+			{"pos": Vector3(0.32, 0.11, -0.05), "rot": 45.0, "mat": duck_white},
+			{"pos": Vector3(-0.05, 0.11, 0.32), "rot": 130.0, "mat": duck_yellow},
+			{"pos": Vector3(0.75, 0.11, -0.25), "rot": -65.0, "mat": duck_white}
+		]
+		for dc in duck_configs:
+			var dpos: Vector3 = dc["pos"]
+			var dmat: Material = dc["mat"]
+			var drot: float = float(dc["rot"])
+			var d_root := Node3D.new()
+			d_root.position = dpos
+			d_root.rotation_degrees.y = drot
+			root.add_child(d_root)
+			add_sphere(d_root, 0.085, 0.11, Vector3(0, 0, 0), dmat)
+			add_sphere(d_root, 0.055, 0.10, Vector3(0, 0.07, 0.06), dmat)
+			add_box(d_root, Vector3(0.04, 0.02, 0.04), Vector3(0, 0.07, 0.11), beak_orange)
+
+		# Shoreline lanterns on left and right banks
+		for lx in [-1.18, 1.18]:
+			add_cylinder(root, 0.025, 0.03, 0.65, Vector3(lx, 0.35, 0.58), rim_stone, 8)
+			add_sphere(root, 0.06, 0.08, Vector3(lx, 0.68, 0.58), get_mat("dp_lamp", Color("fef08a")))
+			add_night_lamp(root, Vector3(lx, 0.68, 0.58), Color(0.65, 0.92, 1.0), 4.5, 1.1)
 
 	elif facility_type == 15:
-		# 15 = COFFEE ROASTER: Warm brick & copper espresso kiosk with giant coffee cup sign
+		# 15 = COFFEE ROASTER (1x1): Warm brick & copper espresso kiosk with giant coffee cup sign
 		var brick_mat := get_mat("cr_brick", Color("9c4a38"))
 		var copper_mat := get_mat("cr_copper", Color("d48952"), 0.45)
 
 		add_box(root, Vector3(0.72, 0.46, 0.56), Vector3(0, 0.28, 0), brick_mat)
 		add_box(root, Vector3(0.78, 0.07, 0.62), Vector3(0, 0.54, 0), copper_mat)
 		add_prism(root, Vector3(0.82, 0.26, 0.66), Vector3(0, 0.70, 0), dark_wood_mat)
-		# Rooftop espresso cup emblem
 		add_cylinder(root, 0.13, 0.10, 0.18, Vector3(0, 0.92, 0), cream_mat, 14)
 		add_night_lamp(root, Vector3(0, 0.82, 0.24), Color(1.0, 0.82, 0.52), 3.8, 0.95)
 
 	elif facility_type == 16:
-		# 16 = STREET STAGE: Wooden acoustic performance deck with crimson arch & spotlight
+		# 16 = STREET STAGE (2x1): Wide wooden acoustic performance deck with crimson arch & dual spotlights
 		var stage_mat := get_mat("ss_wood", Color("b8804f"))
 		var velvet_mat := get_mat("ss_velvet", Color("b54558"))
 		var gold_mat := get_mat("ss_gold", Color("f2c45a"))
 
-		add_cylinder(root, 0.43, 0.45, 0.12, Vector3(0, 0.10, 0), stage_mat, 18)
-		add_box(root, Vector3(0.68, 0.58, 0.10), Vector3(0, 0.44, -0.24), velvet_mat)
-		add_box(root, Vector3(0.74, 0.08, 0.16), Vector3(0, 0.75, -0.22), gold_mat)
-		# Microphone stand in center
-		add_cylinder(root, 0.018, 0.022, 0.42, Vector3(0, 0.36, 0.06), dark_wood_mat, 8)
-		add_sphere(root, 0.04, 0.07, Vector3(0, 0.58, 0.06), gold_mat)
-		add_night_lamp(root, Vector3(0, 0.88, 0.10), Color(1.0, 0.86, 0.58), 4.2, 1.05)
+		add_box(root, Vector3(1.76, 0.14, 0.84), Vector3(0, 0.07, 0), stage_mat)
+		add_box(root, Vector3(1.56, 0.64, 0.12), Vector3(0, 0.46, -0.30), velvet_mat)
+		add_box(root, Vector3(1.66, 0.09, 0.18), Vector3(0, 0.80, -0.28), gold_mat)
+		# Microphone stand & speakers
+		add_cylinder(root, 0.018, 0.022, 0.46, Vector3(0, 0.37, 0.08), dark_wood_mat, 8)
+		add_sphere(root, 0.045, 0.07, Vector3(0, 0.61, 0.08), gold_mat)
+		for sx in [-0.62, 0.62]:
+			add_box(root, Vector3(0.24, 0.36, 0.22), Vector3(sx, 0.32, 0.05), dark_wood_mat)
+		add_night_lamp(root, Vector3(0, 0.92, 0.12), Color(1.0, 0.86, 0.58), 4.6, 1.1)
+
+	elif facility_type == 17:
+		# 17 = STAFF HOUSE: Cozy cedar cabin breakroom with navy gabled roof & warm glowing lantern
+		var cabin_wood := get_mat("sh_wood", Color("8a5836"))
+		var roof_navy := get_mat("sh_roof", Color("2c4459"))
+		var door_mat := get_mat("sh_door", Color("543621"))
+		var window_mat := get_mat("sh_window", Color("ffebba"), 0.3, 0.8)
+
+		add_box(root, Vector3(0.78, 0.58, 0.64), Vector3(0, 0.32, -0.02), cabin_wood)
+		add_prism(root, Vector3(0.86, 0.36, 0.72), Vector3(0, 0.78, -0.02), roof_navy)
+		add_box(root, Vector3(0.24, 0.44, 0.04), Vector3(-0.16, 0.25, 0.30), door_mat)
+		add_box(root, Vector3(0.22, 0.22, 0.04), Vector3(0.18, 0.34, 0.30), window_mat)
+		add_box(root, Vector3(0.40, 0.16, 0.12), Vector3(0.18, 0.12, 0.36), dark_wood_mat)
+		add_cylinder(root, 0.03, 0.025, 0.06, Vector3(0.22, 0.23, 0.36), cream_mat, 8)
+		add_night_lamp(root, Vector3(-0.16, 0.52, 0.34), Color(1.0, 0.88, 0.60), 3.8, 0.95)
+
+	elif facility_type == 18:
+		# 18 = GRAND CLOCKTOWER (2x2): Victorian brick & sandstone spire with 4 clock faces & golden bell dome
+		var stone_base := get_mat("ct_stone", Color("d6cbb5"), 0.85)
+		var brick_body := get_mat("ct_brick", Color("9e4b3b"), 0.82)
+		var clock_face := get_mat("ct_face", Color("fffbeb"), 0.4, 0.6)
+		var gold_trim := get_mat("ct_gold", Color("f59e0b"), 0.35)
+		var slate_roof := get_mat("ct_slate", Color("334155"), 0.78)
+		add_box(root, Vector3(1.66, 0.14, 1.66), Vector3(0, 0.07, 0), stone_base)
+		add_box(root, Vector3(0.86, 0.45, 0.86), Vector3(0, 0.36, 0), stone_base)
+		add_box(root, Vector3(0.68, 1.15, 0.68), Vector3(0, 1.16, 0), brick_body)
+		add_box(root, Vector3(0.76, 0.38, 0.76), Vector3(0, 1.88, 0), stone_base)
+		add_cylinder(root, 0.22, 0.22, 0.04, Vector3(0, 1.88, 0.39), clock_face, 16, Vector3(90, 0, 0))
+		add_cylinder(root, 0.22, 0.22, 0.04, Vector3(0, 1.88, -0.39), clock_face, 16, Vector3(90, 0, 0))
+		add_cylinder(root, 0.22, 0.22, 0.04, Vector3(0.39, 1.88, 0), clock_face, 16, Vector3(0, 0, 90))
+		add_cylinder(root, 0.22, 0.22, 0.04, Vector3(-0.39, 1.88, 0), clock_face, 16, Vector3(0, 0, 90))
+		add_cylinder(root, 0.04, 0.52, 0.62, Vector3(0, 2.38, 0), slate_roof, 12)
+		add_sphere(root, 0.10, 0.16, Vector3(0, 2.72, 0), gold_trim)
+		add_night_lamp(root, Vector3(0, 1.95, 0), Color(1.0, 0.90, 0.65), 6.0, 1.25)
+
+	elif facility_type == 19:
+		# 19 = VINTAGE CAROUSEL (3x3): Grand 3x3 festive pavilion with golden poles & 8 prancing horses
+		var stone_plaza := get_mat("vc_plaza", Color("d6d3d1"), 0.88)
+		var base_deck := get_mat("vc_deck", Color("854d27"), 0.80)
+		var red_tent := get_mat("vc_red", Color("e11d48"), 0.72)
+		var gold_pole := get_mat("vc_gold", Color("fbbf24"), 0.35)
+		var horse_white := get_mat("vc_horse", Color("f8fafc"), 0.65)
+		add_box(root, Vector3(2.76, 0.08, 2.76), Vector3(0, 0.04, 0), stone_plaza)
+		add_cylinder(root, 1.28, 1.34, 0.14, Vector3(0, 0.11, 0), base_deck, 28)
+		add_cylinder(root, 0.34, 0.38, 0.95, Vector3(0, 0.62, 0), gold_pole, 18)
+		for i in range(8):
+			var ang := float(i) * TAU / 8.0
+			var px := cos(ang) * 0.96
+			var pz := sin(ang) * 0.96
+			add_cylinder(root, 0.03, 0.03, 0.95, Vector3(px, 0.62, pz), gold_pole, 8)
+			add_box(root, Vector3(0.18, 0.16, 0.32), Vector3(px, 0.45 + float(i % 2) * 0.12, pz), horse_white, Vector3(0, rad_to_deg(-ang), 0))
+		add_cylinder(root, 0.10, 1.38, 0.58, Vector3(0, 1.36, 0), red_tent, 24)
+		add_cylinder(root, 1.40, 1.40, 0.10, Vector3(0, 1.08, 0), gold_pole, 24)
+		add_sphere(root, 0.16, 0.24, Vector3(0, 1.72, 0), gold_pole)
+		add_night_lamp(root, Vector3(0, 1.05, 0), Color(1.0, 0.85, 0.55), 6.2, 1.3)
+
+	elif facility_type == 20:
+		# 20 = FERRIS WHEEL (4x3): Towering rectangular amusement wheel plaza with boarding deck & 10 gondolas
+		var steel_mat := get_mat("fw_steel", Color("e2e8f0"), 0.55)
+		var rim_mat := get_mat("fw_rim", Color("38bdf8"), 0.4, 0.7)
+		var base_mat := get_mat("fw_base", Color("64748b"), 0.85)
+		var deck_wood := get_mat("fw_wood", Color("92400e"), 0.82)
+		add_box(root, Vector3(3.76, 0.12, 2.76), Vector3(0, 0.06, 0), base_mat)
+		add_box(root, Vector3(2.85, 0.16, 0.85), Vector3(0, 0.14, 0.82), deck_wood)
+		# Wide A-frame support legs spanning the 4x3 plaza
+		for sz in [-0.46, 0.46]:
+			add_cylinder(root, 0.055, 0.07, 2.35, Vector3(-0.65, 1.15, sz), steel_mat, 8, Vector3(0, 0, -24))
+			add_cylinder(root, 0.055, 0.07, 2.35, Vector3(0.65, 1.15, sz), steel_mat, 8, Vector3(0, 0, 24))
+		# Central axle along Z
+		add_cylinder(root, 0.11, 0.11, 1.18, Vector3(0, 2.15, 0), steel_mat, 14, Vector3(90, 0, 0))
+		# 10 Gondola pods around the wide X-Y wheel plane
+		var pod_cols: Array[Color] = [Color("f43f5e"), Color("fbbf24"), Color("34d399"), Color("a855f7"), Color("38bdf8")]
+		for i in range(10):
+			var ang := float(i) * TAU / 10.0
+			var px := cos(ang) * 1.38
+			var py := 2.15 + sin(ang) * 1.38
+			var pmat := get_mat("fw_pod_%d" % (i % 5), pod_cols[i % 5], 0.65)
+			add_box(root, Vector3(0.28, 0.24, 0.34), Vector3(px, py, 0), pmat)
+			add_cylinder(root, 0.025, 0.025, 1.38, Vector3(px * 0.5, 2.15 + sin(ang) * 0.69, -0.32), rim_mat, 6, Vector3(0, 0, rad_to_deg(ang) - 90.0))
+			add_cylinder(root, 0.025, 0.025, 1.38, Vector3(px * 0.5, 2.15 + sin(ang) * 0.69, 0.32), rim_mat, 6, Vector3(0, 0, rad_to_deg(ang) - 90.0))
+		add_night_lamp(root, Vector3(0, 2.15, 0), Color(0.55, 0.88, 1.0), 7.5, 1.4)
+
+	elif facility_type == 21:
+		# 21 = ZEN SHRINE (3x3): Serene 3x3 courtyard with vermilion Torii gate, raked gravel, bridge & twin sakura trees
+		var gravel_mat := get_mat("zs_gravel", Color("e7e5e4"), 0.92)
+		var torii_mat := get_mat("zs_torii", Color("dc2626"), 0.72)
+		var dark_cap := get_mat("zs_cap", Color("1c1917"), 0.85)
+		var sakura_pink := get_mat("zs_sakura", Color("f9a8d4"), 0.80)
+		add_box(root, Vector3(2.76, 0.08, 2.76), Vector3(0, 0.04, 0), gravel_mat)
+		# Main Shrine hall at rear
+		add_box(root, Vector3(1.42, 0.64, 0.92), Vector3(0, 0.38, -0.68), cream_mat)
+		add_prism(root, Vector3(1.68, 0.42, 1.12), Vector3(0, 0.88, -0.68), dark_cap)
+		# Vermilion Torii Gate at front entrance
+		add_cylinder(root, 0.07, 0.08, 1.16, Vector3(-0.56, 0.60, 0.95), torii_mat, 10)
+		add_cylinder(root, 0.07, 0.08, 1.16, Vector3(0.56, 0.60, 0.95), torii_mat, 10)
+		add_box(root, Vector3(1.46, 0.09, 0.14), Vector3(0, 1.00, 0.95), torii_mat)
+		add_box(root, Vector3(1.64, 0.10, 0.18), Vector3(0, 1.16, 0.95), dark_cap)
+		# Twin Sakura trees flanking the courtyard
+		for sx in [-0.92, 0.92]:
+			add_cylinder(root, 0.09, 0.12, 0.78, Vector3(sx, 0.42, 0.15), dark_wood_mat, 8)
+			add_sphere(root, 0.48, 0.62, Vector3(sx, 0.92, 0.15), sakura_pink)
+		add_night_lamp(root, Vector3(0, 0.85, 0.25), Color(1.0, 0.85, 0.62), 5.5, 1.15)
+
+	elif facility_type == 22:
+		# 22 = GOLDEN MONOLITH (2x2): Retro diner kiosk with rotating giant golden burger monument
+		var tile_base := get_mat("gm_base", Color("334155"), 0.80)
+		var diner_red := get_mat("gm_red", Color("dc2626"), 0.65)
+		var gold_bun := get_mat("gm_gold", Color("f59e0b"), 0.30)
+		var gold_patty := get_mat("gm_patty", Color("b45309"), 0.40)
+		var lettuce_mat := get_mat("gm_green", Color("22c55e"), 0.60)
+		add_box(root, Vector3(1.68, 0.12, 1.68), Vector3(0, 0.06, 0), tile_base)
+		add_cylinder(root, 0.58, 0.64, 0.58, Vector3(0, 0.38, 0), diner_red, 18)
+		add_cylinder(root, 0.64, 0.64, 0.08, Vector3(0, 0.68, 0), cream_mat, 18)
+		add_cylinder(root, 0.12, 0.16, 0.42, Vector3(0, 0.90, 0), gold_bun, 12)
+		add_cylinder(root, 0.46, 0.42, 0.14, Vector3(0, 1.15, 0), gold_bun, 18)
+		add_cylinder(root, 0.50, 0.50, 0.06, Vector3(0, 1.25, 0), lettuce_mat, 18)
+		add_cylinder(root, 0.48, 0.48, 0.12, Vector3(0, 1.34, 0), gold_patty, 18)
+		add_sphere(root, 0.46, 0.34, Vector3(0, 1.46, 0), gold_bun)
+		add_night_lamp(root, Vector3(0, 1.65, 0), Color(1.0, 0.86, 0.40), 5.2, 1.2)
+
+	elif facility_type == 23:
+		# 23 = WISHING WELL (1x1): Cobblestone well with timber A-frame roof, rope bucket & sparkling water
+		var cobble_mat := get_mat("ww_cobble", Color("78716c"), 0.88)
+		var water_glow := get_mat("ww_water", Color("38bdf8"), 0.25, 0.9)
+		var roof_wood := get_mat("ww_roof", Color("92400e"), 0.82)
+		add_cylinder(root, 0.38, 0.42, 0.38, Vector3(0, 0.20, 0), cobble_mat, 16)
+		add_cylinder(root, 0.30, 0.30, 0.39, Vector3(0, 0.21, 0), water_glow, 16)
+		add_cylinder(root, 0.035, 0.035, 0.56, Vector3(-0.32, 0.56, 0), dark_wood_mat, 8)
+		add_cylinder(root, 0.035, 0.035, 0.56, Vector3(0.32, 0.56, 0), dark_wood_mat, 8)
+		add_prism(root, Vector3(0.84, 0.34, 0.56), Vector3(0, 0.94, 0), roof_wood)
+		add_night_lamp(root, Vector3(0, 0.55, 0), Color(0.45, 0.88, 1.0), 3.8, 1.0)
+
+	elif facility_type == 24:
+		# 24 = CYBER ARCADE (3x2): Wide neon synthwave gaming hall with glowing magenta/cyan marquee & giant joystick
+		var dark_hull := get_mat("ca_hull", Color("1e1b4b"), 0.70)
+		var neon_pink := get_mat("ca_pink", Color("f43f5e"), 0.2, 1.2)
+		var neon_cyan := get_mat("ca_cyan", Color("06b6d4"), 0.2, 1.2)
+		add_box(root, Vector3(2.68, 0.92, 1.56), Vector3(0, 0.48, 0), dark_hull)
+		add_box(root, Vector3(2.76, 0.10, 1.64), Vector3(0, 0.96, 0), neon_pink)
+		add_box(root, Vector3(2.74, 0.08, 1.62), Vector3(0, 0.56, 0), neon_cyan)
+		# Giant rooftop joystick & dual arcade buttons
+		add_box(root, Vector3(1.12, 0.16, 0.76), Vector3(0, 1.06, 0), dark_hull)
+		add_cylinder(root, 0.05, 0.05, 0.44, Vector3(-0.24, 1.34, 0), get_mat("ca_steel", Color("cbd5e1")), 8, Vector3(0, 0, -15))
+		add_sphere(root, 0.15, 0.24, Vector3(-0.32, 1.58, 0), neon_pink)
+		add_cylinder(root, 0.13, 0.14, 0.09, Vector3(0.18, 1.15, 0.12), neon_cyan, 12)
+		add_cylinder(root, 0.13, 0.14, 0.09, Vector3(0.42, 1.15, -0.10), neon_pink, 12)
+		add_night_lamp(root, Vector3(0, 1.45, 0.55), Color(0.95, 0.35, 0.85), 6.2, 1.35)
+
+	elif facility_type == 25:
+		# 25 = BOTANICAL DOME (3x3): Expansive 3x3 crystal geodesic conservatory dome with lush indoor palms
+		var stone_rim := get_mat("bd_rim", Color("d6d3d1"), 0.85)
+		var glass_dome := get_mat("bd_glass", Color("6ee7b7"), 0.28, 0.4)
+		var palm_green := get_mat("bd_palm", Color("16a34a"), 0.78)
+		add_box(root, Vector3(2.76, 0.10, 2.76), Vector3(0, 0.05, 0), stone_rim)
+		add_cylinder(root, 1.28, 1.34, 0.22, Vector3(0, 0.14, 0), stone_rim, 28)
+		add_sphere(root, 1.24, 1.65, Vector3(0, 0.30, 0), glass_dome)
+		add_box(root, Vector3(0.68, 0.48, 0.44), Vector3(0, 0.26, 1.16), stone_rim)
+		add_sphere(root, 0.54, 0.72, Vector3(0, 0.62, 0), palm_green)
+		add_night_lamp(root, Vector3(0, 0.95, 0), Color(0.55, 1.0, 0.75), 6.2, 1.25)
+
+	elif facility_type == 26:
+		# 26 = TRIUMPH ARCH (3x2): Wide neoclassical marble archway with golden reliefs & rooftop monument
+		var marble_mat := get_mat("ta_marble", Color("f5f5f4"), 0.78)
+		var gold_relief := get_mat("ta_gold", Color("eab308"), 0.38)
+		add_box(root, Vector3(2.76, 0.12, 1.72), Vector3(0, 0.06, 0), marble_mat)
+		add_box(root, Vector3(0.76, 1.38, 1.12), Vector3(-0.78, 0.75, 0), marble_mat)
+		add_box(root, Vector3(0.76, 1.38, 1.12), Vector3(0.78, 0.75, 0), marble_mat)
+		add_box(root, Vector3(2.46, 0.46, 1.22), Vector3(0, 1.62, 0), marble_mat)
+		add_box(root, Vector3(2.54, 0.10, 1.28), Vector3(0, 1.88, 0), gold_relief)
+		add_sphere(root, 0.26, 0.38, Vector3(0, 2.12, 0), gold_relief)
+		add_night_lamp(root, Vector3(0, 1.35, 0), Color(1.0, 0.92, 0.68), 6.0, 1.25)
+
+	elif facility_type == 27:
+		# 27 = GELATO PAVILION (1x1): Pastel Italian parlor with striped awning & giant triple-scoop cone
+		var mint_wall := get_mat("gp_mint", Color("a7f3d0"), 0.78)
+		var pink_scoop := get_mat("gp_pink", Color("f472b6"), 0.65)
+		var cone_waffle := get_mat("gp_waffle", Color("d97706"), 0.82)
+		add_box(root, Vector3(0.74, 0.54, 0.62), Vector3(0, 0.28, 0), mint_wall)
+		add_cylinder(root, 0.44, 0.48, 0.14, Vector3(0, 0.60, 0), pink_scoop, 14)
+		add_cylinder(root, 0.14, 0.03, 0.32, Vector3(0, 0.80, 0), cone_waffle, 12)
+		add_sphere(root, 0.15, 0.22, Vector3(0, 0.98, 0), pink_scoop)
+		add_sphere(root, 0.12, 0.18, Vector3(0, 1.14, 0), cream_mat)
+		add_night_lamp(root, Vector3(0, 0.72, 0.26), Color(1.0, 0.82, 0.90), 3.8, 0.95)
+
+	elif facility_type == 28:
+		# 28 = BIERGARTEN (3x2): Wide Bavarian timber hall with blue/white canopy, oak barrels & picnic terrace
+		var timber_hall := get_mat("bg_timber", Color("78350f"), 0.85)
+		var bav_blue := get_mat("bg_blue", Color("0284c7"), 0.75)
+		var mug_gold := get_mat("bg_mug", Color("f59e0b"), 0.45)
+		add_box(root, Vector3(2.74, 0.10, 1.74), Vector3(0, 0.05, 0), dark_wood_mat)
+		add_box(root, Vector3(2.12, 0.68, 0.92), Vector3(0, 0.42, -0.28), cream_mat)
+		add_prism(root, Vector3(2.28, 0.48, 1.06), Vector3(0, 0.98, -0.28), bav_blue)
+		# Giant oak barrel & foaming mug on front terrace
+		add_cylinder(root, 0.24, 0.26, 0.42, Vector3(-0.68, 0.30, 0.46), timber_hall, 12)
+		add_cylinder(root, 0.18, 0.18, 0.36, Vector3(0.68, 0.28, 0.46), mug_gold, 12)
+		add_sphere(root, 0.19, 0.18, Vector3(0.68, 0.48, 0.46), cream_mat)
+		add_night_lamp(root, Vector3(0, 0.95, 0.40), Color(1.0, 0.85, 0.50), 5.4, 1.2)
+
+	elif facility_type == 29:
+		# 29 = PLANETARIUM (3x3): Grand 3x3 cosmic star theater with tilted golden Saturn ring & telescope
+		var cosmic_blue := get_mat("pl_blue", Color("1e3a8a"), 0.55)
+		var ring_gold := get_mat("pl_gold", Color("facc15"), 0.35, 0.8)
+		var star_white := get_mat("pl_white", Color("f8fafc"), 0.75)
+		add_box(root, Vector3(2.76, 0.10, 2.76), Vector3(0, 0.05, 0), star_white)
+		add_cylinder(root, 1.22, 1.28, 0.24, Vector3(0, 0.18, 0), star_white, 28)
+		add_sphere(root, 1.12, 1.38, Vector3(0, 0.44, 0), cosmic_blue)
+		add_cylinder(root, 1.38, 1.38, 0.05, Vector3(0, 0.78, 0), ring_gold, 28, Vector3(18, 0, -14))
+		add_cylinder(root, 0.08, 0.11, 0.62, Vector3(0.38, 1.18, 0.32), star_white, 10, Vector3(-35, 25, 0))
+		add_night_lamp(root, Vector3(0, 1.55, 0), Color(0.65, 0.85, 1.0), 9.5, 1.5)
+
+	elif facility_type == 30:
+		# 30 = SKATE BOWL (4x2): Long rectangular concrete halfpipe & street skate plaza with teal/orange coping
+		var concrete_mat := get_mat("sb_conc", Color("94a3b8"), 0.86)
+		var coping_teal := get_mat("sb_teal", Color("06b6d4"), 0.65)
+		var deck_orange := get_mat("sb_orange", Color("f97316"), 0.70)
+		add_box(root, Vector3(3.76, 0.16, 1.76), Vector3(0, 0.08, 0), concrete_mat)
+		add_box(root, Vector3(0.48, 0.52, 1.66), Vector3(-1.56, 0.40, 0), concrete_mat)
+		add_box(root, Vector3(0.48, 0.52, 1.66), Vector3(1.56, 0.40, 0), concrete_mat)
+		add_cylinder(root, 0.045, 0.045, 1.66, Vector3(-1.32, 0.66, 0), coping_teal, 10, Vector3(90, 0, 0))
+		add_cylinder(root, 0.045, 0.045, 1.66, Vector3(1.32, 0.66, 0), deck_orange, 10, Vector3(90, 0, 0))
+		# Central grind rail
+		add_box(root, Vector3(1.45, 0.05, 0.06), Vector3(0, 0.28, 0), deck_orange)
+		add_night_lamp(root, Vector3(0, 0.95, 0), Color(0.85, 0.95, 1.0), 5.6, 1.15)
+
+	elif facility_type == 31:
+		# 31 = SPA BATHHOUSE (3x2): Rectangular cedar & slate hot-spring onsen pavilion with steaming turquoise pool
+		var cedar_mat := get_mat("sp_cedar", Color("9a5b32"), 0.82)
+		var onsen_water := get_mat("sp_water", Color("2dd4bf"), 0.25, 0.6)
+		var roof_slate := get_mat("sp_slate", Color("334155"), 0.80)
+		add_box(root, Vector3(2.74, 0.14, 1.74), Vector3(0, 0.07, 0), get_mat("sp_rock", Color("57534e")))
+		add_box(root, Vector3(1.56, 0.64, 0.96), Vector3(-0.42, 0.42, -0.24), cedar_mat)
+		add_prism(root, Vector3(1.76, 0.44, 1.12), Vector3(-0.42, 0.94, -0.24), roof_slate)
+		add_cylinder(root, 0.64, 0.68, 0.14, Vector3(0.62, 0.15, 0.22), onsen_water, 20)
+		add_night_lamp(root, Vector3(0, 0.75, 0.32), Color(1.0, 0.88, 0.64), 5.4, 1.15)
+
+	elif facility_type == 32:
+		# 32 = OBSERVATION TOWER (3x3): Futuristic sky needle on a 3x3 plaza with panoramic skydeck & beacon spire
+		var tower_white := get_mat("ot_white", Color("f1f5f9"), 0.65)
+		var sky_glass := get_mat("ot_glass", Color("38bdf8"), 0.25, 0.9)
+		var beacon_red := get_mat("ot_red", Color("ef4444"), 0.3, 1.2)
+		add_box(root, Vector3(2.76, 0.10, 2.76), Vector3(0, 0.05, 0), tower_white)
+		add_cylinder(root, 1.08, 1.18, 0.20, Vector3(0, 0.14, 0), tower_white, 24)
+		add_cylinder(root, 0.22, 0.42, 2.05, Vector3(0, 1.22, 0), tower_white, 18)
+		add_cylinder(root, 0.82, 0.64, 0.28, Vector3(0, 2.28, 0), sky_glass, 24)
+		add_cylinder(root, 0.68, 0.82, 0.14, Vector3(0, 2.48, 0), tower_white, 24)
+		add_cylinder(root, 0.025, 0.05, 0.68, Vector3(0, 2.88, 0), tower_white, 8)
+		add_sphere(root, 0.08, 0.14, Vector3(0, 3.24, 0), beacon_red)
+		add_night_lamp(root, Vector3(0, 2.52, 0), Color(0.60, 0.90, 1.0), 7.5, 1.4)
+
+	elif facility_type == 33:
+		# 33 = TEA HOUSE (2x1): Rectangular matcha cottage & bamboo verandah with ceremonial teacup emblem
+		var bamboo_wall := get_mat("th_wall", Color("d9f99d"), 0.82)
+		var matcha_roof := get_mat("th_roof", Color("15803d"), 0.78)
+		add_box(root, Vector3(1.76, 0.10, 0.82), Vector3(0, 0.05, 0), dark_wood_mat)
+		add_box(root, Vector3(1.24, 0.56, 0.66), Vector3(-0.18, 0.34, 0), bamboo_wall)
+		add_prism(root, Vector3(1.42, 0.38, 0.78), Vector3(-0.18, 0.78, 0), matcha_roof)
+		add_cylinder(root, 0.16, 0.12, 0.18, Vector3(0.52, 0.22, 0), matcha_roof, 14)
+		add_night_lamp(root, Vector3(0, 0.72, 0.32), Color(0.85, 1.0, 0.70), 4.4, 1.0)
+
+	elif facility_type == 34:
+		# 34 = ART OBELISK (1x1): Avant-garde kinetic geometric sculpture with levitating golden prism
+		var obsidian_mat := get_mat("ao_obs", Color("1e293b"), 0.45)
+		var kinetic_gold := get_mat("ao_gold", Color("f59e0b"), 0.25, 0.8)
+		var kinetic_rose := get_mat("ao_rose", Color("ec4899"), 0.35, 0.7)
+		add_box(root, Vector3(0.68, 0.14, 0.68), Vector3(0, 0.07, 0), obsidian_mat)
+		add_cylinder(root, 0.08, 0.22, 0.78, Vector3(0, 0.52, 0), obsidian_mat, 6)
+		add_box(root, Vector3(0.32, 0.32, 0.32), Vector3(0, 1.08, 0), kinetic_gold, Vector3(35, 45, 20))
+		add_sphere(root, 0.14, 0.22, Vector3(0, 1.46, 0), kinetic_rose)
+		add_night_lamp(root, Vector3(0, 1.15, 0), Color(1.0, 0.75, 0.90), 4.2, 1.1)
+
+	elif facility_type == 35:
+		# 35 = CIRCUS TENT (4x4): Massive 4x4 Grand Big-Top striped pavilion with twin spires & festive entrance arch
+		var bigtop_red := get_mat("ct_red", Color("dc2626"), 0.75)
+		var bigtop_gold := get_mat("ct_ylw", Color("facc15"), 0.72)
+		var festival_ground := get_mat("ct_gnd", Color("fde68a"), 0.88)
+		add_box(root, Vector3(3.78, 0.08, 3.78), Vector3(0, 0.04, 0), festival_ground)
+		add_cylinder(root, 1.66, 1.72, 0.76, Vector3(0, 0.42, 0), bigtop_gold, 28)
+		add_cylinder(root, 0.12, 1.78, 0.98, Vector3(0, 1.28, 0), bigtop_red, 28)
+		add_box(root, Vector3(0.86, 0.62, 0.56), Vector3(0, 0.34, 1.56), bigtop_red)
+		add_cylinder(root, 0.03, 0.03, 0.52, Vector3(0, 1.98, 0), dark_wood_mat, 8)
+		add_box(root, Vector3(0.36, 0.16, 0.03), Vector3(0.18, 2.12, 0), bigtop_gold)
+		add_night_lamp(root, Vector3(0, 1.25, 0.85), Color(1.0, 0.86, 0.52), 7.2, 1.35)
+
+	elif facility_type == 36:
+		# 36 = STEAM TRAIN (4x2): Long 4x2 heritage black & brass locomotive + coal tender on railway track
+		var rail_iron := get_mat("st_iron", Color("1e293b"), 0.55)
+		var cab_red := get_mat("st_red", Color("b91c1c"), 0.70)
+		var brass_trim := get_mat("st_brass", Color("eab308"), 0.35)
+		add_box(root, Vector3(3.76, 0.10, 1.68), Vector3(0, 0.05, 0), dark_wood_mat)
+		# Long locomotive boiler, cab & rear coal tender car
+		add_cylinder(root, 0.34, 0.34, 1.56, Vector3(0.68, 0.52, 0), rail_iron, 18, Vector3(0, 0, 90))
+		add_box(root, Vector3(0.68, 0.82, 0.74), Vector3(-0.26, 0.58, 0), cab_red)
+		add_box(root, Vector3(0.96, 0.56, 0.70), Vector3(-1.18, 0.45, 0), rail_iron)
+		add_cylinder(root, 0.12, 0.10, 0.42, Vector3(1.18, 0.94, 0), brass_trim, 12)
+		add_sphere(root, 0.20, 0.26, Vector3(1.18, 1.24, 0), cream_mat)
+		for wx in [-1.42, -0.92, -0.26, 0.38, 0.98]:
+			for wz in [-0.38, 0.38]:
+				add_cylinder(root, 0.18, 0.18, 0.07, Vector3(wx, 0.22, wz), brass_trim, 12, Vector3(90, 0, 0))
+		add_night_lamp(root, Vector3(1.48, 0.54, 0), Color(1.0, 0.90, 0.60), 5.6, 1.2)
+
+	elif facility_type == 37:
+		# 37 = DIAMOND PAVILION (5x5): Ultimate 5x5 Grand Crystal Exhibition Palace with reflecting pools & golden colonnades
+		var marble_base := get_mat("dp_marble", Color("f8fafc"), 0.65)
+		var pool_water := get_mat("dp_pool", Color("38bdf8"), 0.22, 0.5)
+		var crystal_cyan := get_mat("dp_crys", Color("67e8f9"), 0.20, 1.1)
+		var luxury_gold := get_mat("dp_gold", Color("f59e0b"), 0.30)
+		# Grand 5x5 marble terrace & reflecting pools
+		add_box(root, Vector3(4.78, 0.14, 4.78), Vector3(0, 0.07, 0), marble_base)
+		add_box(root, Vector3(4.24, 0.06, 4.24), Vector3(0, 0.15, 0), pool_water)
+		add_box(root, Vector3(2.86, 0.20, 2.86), Vector3(0, 0.24, 0), marble_base)
+		add_box(root, Vector3(2.68, 0.08, 2.68), Vector3(0, 0.36, 0), luxury_gold)
+		# Perimeter golden colonnades
+		for cx in [-1.18, 0.0, 1.18]:
+			for cz in [-1.18, 0.0, 1.18]:
+				if cx == 0.0 and cz == 0.0:
+					continue
+				add_cylinder(root, 0.09, 0.11, 1.28, Vector3(cx, 1.02, cz), luxury_gold, 12)
+		# Grand crystal pyramid roof & levitating giant diamond centerpiece
+		add_prism(root, Vector3(2.84, 0.88, 2.84), Vector3(0, 2.08, 0), crystal_cyan)
+		add_box(root, Vector3(0.76, 0.76, 0.76), Vector3(0, 1.08, 0), crystal_cyan, Vector3(45, 45, 0))
+		add_sphere(root, 0.24, 0.36, Vector3(0, 2.64, 0), luxury_gold)
+		add_night_lamp(root, Vector3(0, 1.45, 0), Color(0.65, 0.96, 1.0), 9.0, 1.55)
 
 	return root
 
@@ -540,24 +932,47 @@ static func build_fence_mesh(root: Node3D, link_right: bool, link_left: bool, li
 		add_box(root, Vector3(0.07, 0.065, 0.52), Vector3(0, 0.36, -0.26), wood_mat)
 		add_box(root, Vector3(0.07, 0.065, 0.52), Vector3(0, 0.21, -0.26), wood_mat)
 
-static func build_gate_tile_overlay(root: Node3D, is_entry: bool, grid_x: int) -> void:
+static func build_gate_tile_overlay(root: Node3D, is_entry: bool, coords_or_x: Variant, grid_hw: int = 9, grid_hh: int = 6) -> void:
 	var accent_col := Color("4eb87a") if is_entry else Color("e86a4a")
 	var accent_mat := get_mat("gate_acc_%s" % accent_col.to_html(), accent_col, 0.72)
 	var post_mat := get_mat("gate_post", Color("5e4b3c"), 0.85)
 	var cream_mat := get_mat("gate_cream", Color("f7f2e7"), 0.82)
 
-	# Low cozy gate bollards on North & South sides of the walkway
-	for sz in [-0.38, 0.38]:
-		add_cylinder(root, 0.075, 0.09, 0.34, Vector3(0, 0.19, sz), post_mat, 10)
-		add_cylinder(root, 0.085, 0.085, 0.07, Vector3(0, 0.36, sz), accent_mat, 10)
-		add_sphere(root, 0.075, 0.11, Vector3(0, 0.42, sz), cream_mat)
+	var inward_v := Vector2.RIGHT
+	if coords_or_x is Vector2i:
+		var c: Vector2i = coords_or_x
+		if c.x <= -grid_hw:
+			inward_v = Vector2(1.0, 0.0)
+		elif c.x >= grid_hw:
+			inward_v = Vector2(-1.0, 0.0)
+		elif c.y <= -grid_hh:
+			inward_v = Vector2(0.0, 1.0)
+		elif c.y >= grid_hh:
+			inward_v = Vector2(0.0, -1.0)
+		else:
+			if absf(float(c.x) / float(maxi(1, grid_hw))) >= absf(float(c.y) / float(maxi(1, grid_hh))):
+				inward_v = Vector2(-signf(c.x), 0.0)
+			else:
+				inward_v = Vector2(0.0, -signf(c.y))
+	elif coords_or_x is int or coords_or_x is float:
+		inward_v = Vector2(1.0 if float(coords_or_x) <= 0.0 else -1.0, 0.0)
 
-	# Directional arrow on the ground showing one-way flow (Inward for Entry, Outward for Exit)
-	var inward_dir_x: float = 1.0 if grid_x <= 0 else -1.0
-	var flow_dir_x: float = inward_dir_x if is_entry else -inward_dir_x
-	var rot_y: float = -90.0 if flow_dir_x > 0.0 else 90.0
-	add_box(root, Vector3(0.28, 0.02, 0.12), Vector3(-flow_dir_x * 0.08, 0.062, 0), accent_mat)
-	add_prism(root, Vector3(0.28, 0.22, 0.02), Vector3(flow_dir_x * 0.12, 0.062, 0), cream_mat, Vector3(90, rot_y, 0))
+	var flow_v: Vector2 = inward_v if is_entry else -inward_v
+	var perp_v := Vector2(-flow_v.y, flow_v.x)
+
+	# Low cozy gate bollards perpendicular to the walkway flow
+	for s in [-0.38, 0.38]:
+		var b_pos := Vector3(perp_v.x * s, 0.19, perp_v.y * s)
+		add_cylinder(root, 0.075, 0.09, 0.34, b_pos, post_mat, 10)
+		add_cylinder(root, 0.085, 0.085, 0.07, b_pos + Vector3(0, 0.17, 0), accent_mat, 10)
+		add_sphere(root, 0.075, 0.11, b_pos + Vector3(0, 0.23, 0), cream_mat)
+
+	# Directional chevron / arrow aligned with flow direction
+	var arrow_holder := Node3D.new()
+	arrow_holder.rotation.y = atan2(flow_v.x, flow_v.y)
+	root.add_child(arrow_holder)
+	add_box(arrow_holder, Vector3(0.12, 0.02, 0.28), Vector3(0, 0.062, -0.08), accent_mat)
+	add_prism(arrow_holder, Vector3(0.28, 0.22, 0.02), Vector3(0, 0.062, 0.12), cream_mat, Vector3(90, 0, 0))
 
 static func build_trash_prop(variant: int = 0) -> Node3D:
 	var trash := Node3D.new()
@@ -623,6 +1038,120 @@ static func build_citizen_visual(archetype: int, primary_col: Color) -> Node3D:
 		add_sphere(root, 0.15, 0.30, Vector3(0, 0.56, 0), skin_mat)
 		add_sphere(root, 0.155, 0.18, Vector3(0, 0.63, 0), cap_mat)
 		add_box(root, Vector3(0.16, 0.18, 0.10), Vector3(0, 0.28, -0.14), wood_mat)
+	elif archetype == 5:
+		# BUSKER: Burgundy beret + acoustic wooden guitar across torso
+		var beret_mat := get_mat("cit_beret", Color("8a2b3b"), 0.75)
+		var guitar_body := get_mat("cit_guitar", Color("c47d3b"), 0.70)
+		var guitar_neck := get_mat("cit_g_neck", Color("5c3a1e"), 0.85)
+		add_cylinder(root, 0.12, 0.18, 0.38, Vector3(0, 0.26, 0), body_mat, 16)
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.58, 0), skin_mat)
+		add_cylinder(root, 0.16, 0.15, 0.05, Vector3(0, 0.68, 0), beret_mat, 14, Vector3(10, 0, 5))
+		# Acoustic Guitar
+		add_box(root, Vector3(0.18, 0.22, 0.07), Vector3(0.04, 0.32, 0.16), guitar_body, Vector3(15, 25, -20))
+		add_cylinder(root, 0.018, 0.018, 0.28, Vector3(0.14, 0.48, 0.12), guitar_neck, 8, Vector3(15, 25, -20))
+	elif archetype == 6:
+		# PHONE ZOMBIE: Hunched posture + glowing blue smartphone held in two hands
+		var phone_mat := get_mat("cit_phone", Color("38bdf8"), 0.2, 1.2)
+		var phone_case := get_mat("cit_p_case", Color("1e293b"), 0.8)
+		add_cylinder(root, 0.12, 0.18, 0.38, Vector3(0, 0.26, 0.03), body_mat, 16, Vector3(12, 0, 0))
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.55, 0.10), skin_mat, Vector3(22, 0, 0))
+		# Smartphone
+		add_box(root, Vector3(0.12, 0.02, 0.18), Vector3(0, 0.38, 0.22), phone_case, Vector3(-35, 0, 0))
+		add_box(root, Vector3(0.10, 0.01, 0.15), Vector3(0, 0.39, 0.22), phone_mat, Vector3(-35, 0, 0))
+	elif archetype == 7:
+		# TOUR GROUP: Yellow tour visor + camera neck strap + lanyard badge
+		var visor_mat := get_mat("cit_visor", Color("fbbf24"), 0.75)
+		var cam_mat := get_mat("cit_cam", Color("334155"), 0.7)
+		add_cylinder(root, 0.12, 0.18, 0.38, Vector3(0, 0.26, 0), body_mat, 16)
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.58, 0), skin_mat)
+		add_cylinder(root, 0.16, 0.16, 0.04, Vector3(0, 0.67, 0.02), visor_mat, 14, Vector3(-8, 0, 0))
+		add_box(root, Vector3(0.14, 0.02, 0.08), Vector3(0, 0.65, 0.16), visor_mat, Vector3(-12, 0, 0))
+		add_box(root, Vector3(0.11, 0.08, 0.06), Vector3(0, 0.35, 0.14), cam_mat)
+	elif archetype == 8:
+		# SKATER: Backward red cap + elbow pads + skateboard under feet
+		var skate_deck := get_mat("cit_skate_deck", Color("06b6d4"), 0.7)
+		var skate_wheel := get_mat("cit_skate_wh", Color("f97316"), 0.8)
+		var bcap_mat := get_mat("cit_bcap", Color("ef4444"), 0.75)
+		add_cylinder(root, 0.12, 0.18, 0.38, Vector3(0, 0.32, 0), body_mat, 16)
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.64, 0), skin_mat)
+		add_sphere(root, 0.15, 0.16, Vector3(0, 0.70, -0.02), bcap_mat)
+		add_box(root, Vector3(0.10, 0.02, 0.08), Vector3(0, 0.69, -0.15), bcap_mat, Vector3(15, 0, 0))
+		# Skateboard
+		add_box(root, Vector3(0.22, 0.03, 0.54), Vector3(0, 0.07, 0), skate_deck)
+		for sx in [-0.09, 0.09]:
+			for sz in [-0.18, 0.18]:
+				add_cylinder(root, 0.04, 0.04, 0.03, Vector3(sx, 0.04, sz), skate_wheel, 8, Vector3(0, 0, 90))
+	elif archetype == 9:
+		# DOG WALKER: Friendly walker with dynamic leash leading to a cute four-legged dog
+		var dog_fur := get_mat("cit_dog_fur", Color("9a5d30"), 0.8)
+		var dog_ear := get_mat("cit_dog_ear", Color("6b3d1b"), 0.85)
+		var leash_mat := get_mat("cit_leash", Color("ef4444"), 0.7)
+		add_cylinder(root, 0.12, 0.18, 0.38, Vector3(0, 0.26, 0.1), body_mat, 16)
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.58, 0.1), skin_mat)
+		# Dog entity behind owner
+		var dog_node := Node3D.new()
+		dog_node.name = "PetDog"
+		dog_node.position = Vector3(0.24, 0, -0.42)
+		root.add_child(dog_node)
+		add_box(dog_node, Vector3(0.16, 0.14, 0.28), Vector3(0, 0.15, 0), dog_fur)
+		add_sphere(dog_node, 0.08, 0.14, Vector3(0, 0.22, 0.14), dog_fur)
+		add_box(dog_node, Vector3(0.04, 0.08, 0.03), Vector3(-0.07, 0.22, 0.12), dog_ear)
+		add_box(dog_node, Vector3(0.04, 0.08, 0.03), Vector3(0.07, 0.22, 0.12), dog_ear)
+		for lx in [-0.06, 0.06]:
+			for lz in [-0.09, 0.09]:
+				add_cylinder(dog_node, 0.02, 0.02, 0.10, Vector3(lx, 0.05, lz), dog_fur, 6)
+		# Leash connecting hand to dog collar
+		add_cylinder(root, 0.008, 0.008, 0.48, Vector3(0.12, 0.22, -0.16), leash_mat, 4, Vector3(40, 20, 0))
+	elif archetype == 10:
+		# PICKPOCKET: Stealth charcoal hoodie pulled low + dark gloves & sneaky stance
+		var stealth_hood := get_mat("cit_hood", Color("1e293b"), 0.85)
+		var mask_mat := get_mat("cit_mask", Color("0f172a"), 0.9)
+		add_cylinder(root, 0.12, 0.17, 0.38, Vector3(0, 0.24, 0.04), stealth_hood, 16, Vector3(10, 0, 0))
+		add_sphere(root, 0.15, 0.29, Vector3(0, 0.54, 0.08), stealth_hood)
+		add_box(root, Vector3(0.14, 0.07, 0.06), Vector3(0, 0.52, 0.18), mask_mat)
+	elif archetype == 11:
+		# INSPECTOR: Formal tan trench coat + dark fedora + official clipboard
+		var coat_mat := get_mat("cit_coat", Color("bfa27b"), 0.8)
+		var fedora_mat := get_mat("cit_fedora", Color("3e3228"), 0.85)
+		var clip_mat := get_mat("cit_clip", Color("78350f"), 0.8)
+		var paper_mat := get_mat("cit_paper", Color("fef3c7"), 0.7)
+		add_cylinder(root, 0.13, 0.18, 0.42, Vector3(0, 0.27, 0), coat_mat, 16)
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.60, 0), skin_mat)
+		add_cylinder(root, 0.20, 0.20, 0.03, Vector3(0, 0.70, 0), fedora_mat, 14)
+		add_cylinder(root, 0.13, 0.12, 0.10, Vector3(0, 0.76, 0), fedora_mat, 12)
+		# Clipboard
+		add_box(root, Vector3(0.14, 0.20, 0.03), Vector3(0.18, 0.36, 0.12), clip_mat, Vector3(15, 20, 0))
+		add_box(root, Vector3(0.11, 0.16, 0.01), Vector3(0.18, 0.36, 0.14), paper_mat, Vector3(15, 20, 0))
+	elif archetype == 12:
+		# PIGEON FEEDER: Forest-green knit sweater + carrying paper bag of breadcrumbs
+		var sweater_mat := get_mat("cit_sweater", Color("2d5a3f"), 0.8)
+		var bag_mat := get_mat("cit_bag", Color("d4a373"), 0.85)
+		add_cylinder(root, 0.13, 0.18, 0.38, Vector3(0, 0.25, 0), sweater_mat, 16)
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.57, 0), skin_mat)
+		add_cylinder(root, 0.14, 0.14, 0.06, Vector3(0, 0.42, 0), cream_mat, 12)
+		# Bread bag
+		add_box(root, Vector3(0.12, 0.18, 0.10), Vector3(0.16, 0.32, 0.10), bag_mat)
+	elif archetype == 13:
+		# INFLUENCER: Chic sunglasses + long selfie stick with phone pointing backward
+		var glasses_mat := get_mat("cit_glasses", Color("111827"), 0.4)
+		var stick_mat := get_mat("cit_stick", Color("94a3b8"), 0.5)
+		var sphone_mat := get_mat("cit_sphone", Color("f43f5e"), 0.6)
+		add_cylinder(root, 0.12, 0.18, 0.38, Vector3(0, 0.26, 0), body_mat, 16)
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.58, 0), skin_mat)
+		# Cool sunglasses
+		add_box(root, Vector3(0.18, 0.05, 0.04), Vector3(0, 0.60, 0.13), glasses_mat)
+		# Selfie stick extended up and forward
+		add_cylinder(root, 0.01, 0.01, 0.46, Vector3(0.12, 0.52, 0.22), stick_mat, 6, Vector3(-45, 15, 0))
+		add_box(root, Vector3(0.10, 0.06, 0.02), Vector3(0.16, 0.68, 0.36), sphone_mat, Vector3(-45, 15, 0))
+	elif archetype == 14:
+		# MARATHONER: Neon athletic tank + running shorts + headband & bib #
+		var neon_mat := get_mat("cit_neon", Color("22c55e"), 0.7)
+		var bib_mat := get_mat("cit_bib", Color("f8fafc"), 0.8)
+		var hband_mat := get_mat("cit_hband", Color("f97316"), 0.75)
+		add_cylinder(root, 0.115, 0.17, 0.38, Vector3(0, 0.27, 0.02), neon_mat, 16, Vector3(8, 0, 0))
+		add_sphere(root, 0.145, 0.29, Vector3(0, 0.59, 0.04), skin_mat)
+		add_cylinder(root, 0.15, 0.15, 0.04, Vector3(0, 0.64, 0.04), hband_mat, 14)
+		add_box(root, Vector3(0.12, 0.10, 0.01), Vector3(0, 0.32, 0.14), bib_mat)
 	else:
 		# NORMAL: Cozy pawn with cream collar trim
 		add_cylinder(root, 0.12, 0.18, 0.38, Vector3(0, 0.26, 0), body_mat, 16)
@@ -658,7 +1187,7 @@ static func build_staff_visual(staff_type: int) -> Node3D:
 		# Little guide flag held up
 		add_cylinder(root, 0.015, 0.015, 0.56, Vector3(0.20, 0.45, 0.04), wood_mat, 8)
 		add_box(root, Vector3(0.16, 0.11, 0.02), Vector3(0.28, 0.68, 0.04), flag_mat)
-	else:
+	elif staff_type == 2:
 		# SECURITY OFFICER: Crisp navy uniform + peaked cap + gold badge
 		var sec_mat := get_mat("stf_sec", Color("283e66"), 0.75)
 		var gold_mat := get_mat("stf_gold", Color("f5c542"), 0.5)
@@ -666,6 +1195,21 @@ static func build_staff_visual(staff_type: int) -> Node3D:
 		add_box(root, Vector3(0.06, 0.06, 0.03), Vector3(-0.06, 0.36, 0.14), gold_mat)
 		add_sphere(root, 0.145, 0.29, Vector3(0, 0.59, 0), skin_mat)
 		add_cylinder(root, 0.16, 0.15, 0.07, Vector3(0, 0.70, 0), sec_mat, 14)
+	elif staff_type == 3:
+		# CLEANING DRONE: Sleek hovering drone with cyan sensor ring & miniature rotors
+		var drone_mat := get_mat("stf_drone_white", Color("f0f4f8"), 0.4)
+		var cyan_mat := get_mat("stf_drone_cyan", Color("38bdf8"), 0.3, 1.2)
+		var dark_prop_mat := get_mat("stf_drone_dark", Color("334155"), 0.8)
+		# Central chassis
+		add_sphere(root, 0.16, 0.22, Vector3(0, 0.38, 0), drone_mat)
+		add_cylinder(root, 0.18, 0.18, 0.05, Vector3(0, 0.36, 0), cyan_mat, 16)
+		# 4 mini rotor pods
+		for rx in [-0.20, 0.20]:
+			for rz in [-0.20, 0.20]:
+				add_cylinder(root, 0.018, 0.018, 0.10, Vector3(rx * 0.7, 0.37, rz * 0.7), dark_prop_mat, 8, Vector3(0, 0, 45 if rx > 0 else -45))
+				add_cylinder(root, 0.065, 0.065, 0.02, Vector3(rx, 0.40, rz), dark_prop_mat, 10)
+		# Downward scanning light
+		add_night_lamp(root, Vector3(0, 0.26, 0), Color(0.35, 0.85, 1.0), 2.5, 0.85)
 
 	return root
 

@@ -4,11 +4,13 @@ extends Node
 signal network_changed
 
 const MAX_PEOPLE_PER_TILE: int = 10
+var max_people_per_tile: int = 10
 const GRASS_WEIGHT: float = 8.5
 
 var astar: AStar2D = AStar2D.new()
 var astar_crowded: AStar2D = AStar2D.new()
 var astar_freewalk: AStar2D = AStar2D.new()
+var astar_staff: AStar2D = AStar2D.new()
 
 var grid_half_width: int = 9
 var grid_half_height: int = 6
@@ -27,6 +29,7 @@ func clear_all() -> void:
 	astar.clear()
 	astar_crowded.clear()
 	astar_freewalk.clear()
+	astar_staff.clear()
 	occupied_cells.clear()
 	impassable_cells.clear()
 	water_cells.clear()
@@ -66,6 +69,30 @@ func setup_plaza_grid(hw: int, hh: int, obstacles: Dictionary, bridges: Array = 
 			var c := Vector2i(gx, gz)
 			if not impassable_cells.has(c):
 				_rebuild_connections_for_cell(c)
+
+	network_changed.emit()
+
+func expand_grid_height(new_hh: int) -> void:
+	if new_hh <= grid_half_height:
+		return
+	var old_hh := grid_half_height
+	grid_half_height = new_hh
+
+	# Add new rows to graphs
+	for gz in range(old_hh + 1, new_hh + 1):
+		for row_z in [-gz, gz]:
+			for gx in range(-grid_half_width, grid_half_width + 1):
+				var c := Vector2i(gx, row_z)
+				if not impassable_cells.has(c):
+					_add_walkable_cell_to_graphs(c)
+
+	# Reconnect new rows and their boundary neighbor rows
+	for gz in range(old_hh, new_hh + 1):
+		for row_z in [-gz, gz]:
+			for gx in range(-grid_half_width, grid_half_width + 1):
+				var c := Vector2i(gx, row_z)
+				if not impassable_cells.has(c):
+					_rebuild_connections_for_cell(c)
 
 	network_changed.emit()
 
@@ -111,6 +138,11 @@ func _add_walkable_cell_to_graphs(coords: Vector2i) -> void:
 	else:
 		astar_freewalk.set_point_weight_scale(id, free_w)
 
+	if not astar_staff.has_point(id):
+		astar_staff.add_point(id, Vector2(coords.x, coords.y), 1.0)
+	else:
+		astar_staff.set_point_weight_scale(id, 1.0)
+
 func _remove_cell_from_graphs(coords: Vector2i) -> void:
 	var id := cell_to_id(coords)
 	if astar.has_point(id):
@@ -119,6 +151,21 @@ func _remove_cell_from_graphs(coords: Vector2i) -> void:
 		astar_crowded.remove_point(id)
 	if astar_freewalk.has_point(id):
 		astar_freewalk.remove_point(id)
+	if astar_staff.has_point(id):
+		astar_staff.remove_point(id)
+
+func get_inward_direction(coords: Vector2i) -> Vector2i:
+	if coords.x <= -grid_half_width:
+		return Vector2i.RIGHT
+	if coords.x >= grid_half_width:
+		return Vector2i.LEFT
+	if coords.y <= -grid_half_height:
+		return Vector2i.DOWN
+	if coords.y >= grid_half_height:
+		return Vector2i.UP
+	if absi(coords.x) >= absi(coords.y):
+		return Vector2i(-signi(coords.x), 0)
+	return Vector2i(0, -signi(coords.y))
 
 func _can_traverse_directed(from_cell: Vector2i, to_cell: Vector2i) -> bool:
 	if not is_cell_walkable(from_cell) or not is_cell_walkable(to_cell):
@@ -127,26 +174,22 @@ func _can_traverse_directed(from_cell: Vector2i, to_cell: Vector2i) -> bool:
 	var from_type := int(occupied_cells.get(from_cell, -1))
 	var to_type := int(occupied_cells.get(to_cell, -1))
 
-	# ENTRY_GATE (11): only allows inward movement into the plaza
+	# ENTRY_GATE (ItemId.ENTRY_GATE): only allows inward movement into the plaza
 	if from_type == FacilityCatalog.ItemId.ENTRY_GATE:
-		var inward_x := 1 if from_cell.x <= 0 else -1
-		if step.x == -inward_x:
+		var inward := get_inward_direction(from_cell)
+		if step != inward:
 			return false
 	if to_type == FacilityCatalog.ItemId.ENTRY_GATE:
-		var inward_x := 1 if to_cell.x <= 0 else -1
-		# Cannot step outward into an Entry Gate from inside the plaza
-		if step.x == -inward_x:
-			return false
+		# Cannot step into an Entry Gate from inside the plaza
+		return false
 
-	# EXIT_GATE (12): only allows outward movement out of the plaza
+	# EXIT_GATE (ItemId.EXIT_GATE): only allows outward movement out of the plaza
 	if from_type == FacilityCatalog.ItemId.EXIT_GATE:
-		var outward_x := -1 if from_cell.x < 0 else 1
-		if step.x == -outward_x:
-			return false
+		# Cannot step back into the plaza from an Exit Gate
+		return false
 	if to_type == FacilityCatalog.ItemId.EXIT_GATE:
-		var outward_x := -1 if to_cell.x < 0 else 1
-		# Cannot step inward into an Exit Gate from outside
-		if step.x == -outward_x:
+		var outward := -get_inward_direction(to_cell)
+		if step != outward:
 			return false
 
 	return true
@@ -176,6 +219,14 @@ func _rebuild_connections_for_cell(coords: Vector2i) -> void:
 				g.connect_points(id, n_id, false)
 			if _can_traverse_directed(n, coords):
 				g.connect_points(n_id, id, false)
+
+		if astar_staff.are_points_connected(id, n_id, false):
+			astar_staff.disconnect_points(id, n_id, false)
+		if astar_staff.are_points_connected(n_id, id, false):
+			astar_staff.disconnect_points(n_id, id, false)
+		if is_cell_walkable(coords) and is_cell_walkable(n):
+			# Staff can freely walk bidirectionally between any adjacent walkable cells, including gates
+			astar_staff.connect_points(id, n_id, true)
 
 func _rebuild_cell_and_neighbors(coords: Vector2i) -> void:
 	_rebuild_connections_for_cell(coords)
@@ -233,18 +284,9 @@ func get_entry_gate_cells() -> Array[Vector2i]:
 	var edge_gates: Array[Vector2i] = []
 	for cell_key in occupied_cells.keys():
 		var c: Vector2i = cell_key
-		if absi(c.x) == grid_half_width:
-			var t := int(occupied_cells[c])
-			if t == FacilityCatalog.ItemId.PATH_TILE or t == FacilityCatalog.ItemId.ENTRY_GATE:
-				edge_gates.append(c)
-	if not edge_gates.is_empty():
-		return edge_gates
-	# Fallback: any walkable edge cell that is not an Exit Gate
-	for gz in range(-grid_half_height, grid_half_height + 1):
-		for gx in [-grid_half_width, grid_half_width]:
-			var c := Vector2i(gx, gz)
-			if is_cell_walkable(c) and int(occupied_cells.get(c, -1)) != FacilityCatalog.ItemId.EXIT_GATE:
-				edge_gates.append(c)
+		var t := int(occupied_cells[c])
+		if t == FacilityCatalog.ItemId.ENTRY_GATE:
+			edge_gates.append(c)
 	return edge_gates
 
 func get_exit_gate_cells(preferred_side_x: int = 0) -> Array[Vector2i]:
@@ -252,32 +294,31 @@ func get_exit_gate_cells(preferred_side_x: int = 0) -> Array[Vector2i]:
 	var all_exits: Array[Vector2i] = []
 	for cell_key in occupied_cells.keys():
 		var c: Vector2i = cell_key
-		if absi(c.x) == grid_half_width:
-			var t := int(occupied_cells[c])
-			if t == FacilityCatalog.ItemId.PATH_TILE or t == FacilityCatalog.ItemId.EXIT_GATE:
-				all_exits.append(c)
-				if preferred_side_x != 0 and signi(c.x) == signi(preferred_side_x):
-					preferred.append(c)
+		var t := int(occupied_cells[c])
+		if t == FacilityCatalog.ItemId.EXIT_GATE:
+			all_exits.append(c)
+			if preferred_side_x != 0 and signi(c.x) == signi(preferred_side_x):
+				preferred.append(c)
 	if not preferred.is_empty():
 		return preferred
-	if not all_exits.is_empty():
-		return all_exits
-	# Fallback: any walkable edge cell that is not an Entry Gate
-	for gz in range(-grid_half_height, grid_half_height + 1):
-		for gx in [-grid_half_width, grid_half_width]:
-			var c := Vector2i(gx, gz)
-			if is_cell_walkable(c) and int(occupied_cells.get(c, -1)) != FacilityCatalog.ItemId.ENTRY_GATE:
-				all_exits.append(c)
 	return all_exits
 
-func get_route(from_coords: Vector2i, to_coords: Vector2i, avoid_crowds: bool = false, free_walk: bool = false) -> PackedVector2Array:
+func get_route(from_coords: Vector2i, to_coords: Vector2i, avoid_crowds: bool = false, free_walk: bool = false, is_staff: bool = false) -> PackedVector2Array:
 	var from_id := cell_to_id(from_coords)
 	var to_id := cell_to_id(to_coords)
+
+	if is_staff:
+		if astar_staff.has_point(from_id) and astar_staff.has_point(to_id):
+			return astar_staff.get_point_path(from_id, to_id)
+		return PackedVector2Array()
 
 	var graph := astar_freewalk if free_walk else (astar_crowded if avoid_crowds else astar)
 	if graph.has_point(from_id) and graph.has_point(to_id):
 		return graph.get_point_path(from_id, to_id)
 	return PackedVector2Array()
+
+func get_staff_route(from_coords: Vector2i, to_coords: Vector2i) -> PackedVector2Array:
+	return get_route(from_coords, to_coords, false, true, true)
 
 func get_adjacent_access_tile(facility_coords: Vector2i) -> Variant:
 	var dirs: Array[Vector2i] = [Vector2i.DOWN, Vector2i.UP, Vector2i.LEFT, Vector2i.RIGHT]
@@ -339,7 +380,7 @@ func get_tile_occupancy(coords: Vector2i) -> int:
 	return total_people
 
 func is_tile_full(coords: Vector2i, incoming_headcount: int = 1) -> bool:
-	return get_tile_occupancy(coords) + incoming_headcount > MAX_PEOPLE_PER_TILE
+	return get_tile_occupancy(coords) + incoming_headcount > max_people_per_tile
 
 func set_tile_trash_count(coords: Vector2i, count: int) -> void:
 	if count <= 0:
@@ -365,13 +406,15 @@ func get_cleanliness_multiplier(trash_count: int) -> float:
 	else:
 		return 0.60 # Max Dirty (3+) = 60%
 
-func get_crowd_speed_multiplier(coords: Vector2i, has_security_boost: bool = false, trash_count: int = -1) -> float:
-	var n := clampi(get_tile_occupancy(coords), 1, MAX_PEOPLE_PER_TILE)
-	var mult := lerpf(1.0, 0.05, float(n - 1) / float(MAX_PEOPLE_PER_TILE - 1))
+func get_crowd_speed_multiplier(coords: Vector2i, has_security_boost: bool = false, trash_count: int = -1, has_express_arterial: bool = false) -> float:
+	var n := clampi(get_tile_occupancy(coords), 1, max_people_per_tile)
+	var mult := lerpf(1.0, 0.05, float(n - 1) / float(maxi(2, max_people_per_tile) - 1))
 	if has_security_boost and n > 1:
 		mult = clampf(maxf(mult * 1.40, 0.35), 0.35, 1.0)
 	var actual_trash := trash_count if trash_count >= 0 else get_tile_trash_count(coords)
 	mult *= get_cleanliness_multiplier(actual_trash)
+	if has_express_arterial and has_path_tile(coords):
+		mult *= 1.35
 	return mult
 
 func compute_separation_push(agent: Node3D, coords: Vector2i) -> Vector3:

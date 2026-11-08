@@ -5,9 +5,28 @@ signal need_routing_refresh(peep: PeepAgent)
 signal exited_unfulfilled(peep: PeepAgent)
 signal exited_happy_passthrough(peep: PeepAgent)
 signal wants_to_dispose_trash(peep: PeepAgent, tile_coords: Vector2i)
+signal security_alert_pickpocket(pickpocket: PeepAgent)
+signal inspector_audit_infraction(reason: String, penalty: float)
+signal pigeon_slow_zone_created(center: Vector2i, duration: float)
 
 enum NeedType { FOOD = 0, DRINK = 1, RESTROOM = 2, SIT = 3 }
-enum Archetype { NORMAL = 0, ELDER = 1, BUSINESS = 2, COUPLE = 3, CHILD = 4 }
+enum Archetype {
+	NORMAL = 0,
+	ELDER = 1,
+	BUSINESS = 2,
+	COUPLE = 3,
+	CHILD = 4,
+	BUSKER = 5,
+	PHONE_ZOMBIE = 6,
+	TOUR_GROUP = 7,
+	SKATER = 8,
+	DOG_WALKER = 9,
+	PICKPOCKET = 10,
+	INSPECTOR = 11,
+	PIGEON_FEEDER = 12,
+	INFLUENCER = 13,
+	MARATHONER = 14
+}
 enum AgentState {
 	WALKING_TO_FACILITY,
 	WALKING_UNFULFILLED,
@@ -37,10 +56,38 @@ var has_emitted_unfulfilled: bool = false
 
 var has_pending_trash: bool = false
 var trash_timer: float = 0.0
+var gate_wait_timer: float = 0.0
+var gate_retry_timer: float = 0.0
 
 var prefers_crowd_diversion: bool = true
 var is_walking_freely: bool = false
 var head_popup_timer: float = 0.0
+
+var stumble_timer: float = 0.0
+var busker_perform_timer: float = 0.0
+var busker_delay_timer: float = 4.0
+var is_performing_busker: bool = false
+var is_captivated_by_busker: bool = false
+var captivated_timer: float = 0.0
+
+var influencer_film_timer: float = 0.0
+var influencer_delay_timer: float = 5.0
+var is_filming_influencer: bool = false
+
+var pigeon_scatter_timer: float = 0.0
+var pigeon_delay_timer: float = 6.0
+var is_feeding_pigeons: bool = false
+
+var pickpocket_cooldown: float = 4.0
+var is_fleeing_pickpocket: bool = false
+
+var dog_mess_timer: float = 12.0
+var phone_zombie_trash_timer: float = 10.0
+
+var inspector_audit_timer: float = 1.5
+var inspector_audited_cells: Dictionary = {}
+
+var is_startled_timer: float = 0.0
 
 var crowd_aversion: float = 1.0
 var distance_tolerance: float = 1.0
@@ -143,6 +190,53 @@ func setup_citizen_full(
 			personality_whim_seed = randf_range(-5.5, 5.5)
 			if randf() < 0.25:
 				is_walking_freely = true
+		Archetype.BUSKER:
+			walk_speed = 2.40
+			max_need_patience = 34.0
+			prefers_crowd_diversion = false
+			busker_delay_timer = randf_range(3.0, 5.5)
+		Archetype.PHONE_ZOMBIE:
+			walk_speed = 1.10
+			max_need_patience = 45.0
+			prefers_crowd_diversion = false
+			phone_zombie_trash_timer = randf_range(6.0, 14.0)
+		Archetype.TOUR_GROUP:
+			walk_speed = 1.80
+			max_need_patience = 32.0
+			prefers_crowd_diversion = false
+			crowd_aversion = 0.5
+		Archetype.SKATER:
+			walk_speed = 5.20
+			max_need_patience = 22.0
+			prefers_crowd_diversion = true
+		Archetype.DOG_WALKER:
+			walk_speed = 2.80
+			max_need_patience = 30.0
+			prefers_crowd_diversion = false
+			dog_mess_timer = randf_range(8.0, 18.0)
+		Archetype.PICKPOCKET:
+			walk_speed = 2.30
+			max_need_patience = 45.0
+			prefers_crowd_diversion = false
+		Archetype.INSPECTOR:
+			walk_speed = 2.00
+			max_need_patience = 50.0
+			prefers_crowd_diversion = false
+		Archetype.PIGEON_FEEDER:
+			walk_speed = 1.30
+			max_need_patience = 35.0
+			prefers_crowd_diversion = false
+			pigeon_delay_timer = randf_range(4.0, 8.0)
+		Archetype.INFLUENCER:
+			walk_speed = 1.50
+			max_need_patience = 30.0
+			prefers_crowd_diversion = false
+			influencer_delay_timer = randf_range(3.0, 6.0)
+		Archetype.MARATHONER:
+			walk_speed = 4.50
+			max_need_patience = 16.0
+			prefers_crowd_diversion = false
+			is_walking_freely = false
 		_:
 			walk_speed = 2.60
 			max_need_patience = 28.0
@@ -164,7 +258,11 @@ func setup_citizen_full(
 			status_label.visible = false
 
 func get_tile_headcount() -> int:
-	return 2 if archetype == Archetype.COUPLE else 1
+	if archetype == Archetype.COUPLE:
+		return 2
+	if archetype == Archetype.TOUR_GROUP:
+		return 3
+	return 1
 
 func has_active_need() -> bool:
 	return not needs_queue.is_empty()
@@ -220,6 +318,9 @@ func assign_facility_route(route: PackedVector2Array, stall: Node3D, access_cell
 	target_index = 0
 	is_waiting_in_queue = false
 	state = AgentState.WALKING_TO_FACILITY
+	if not route.is_empty():
+		gate_wait_timer = 0.0
+		gate_retry_timer = 0.0
 	_trim_initial_waypoint()
 
 func assign_passthrough_route(route: PackedVector2Array) -> void:
@@ -233,6 +334,9 @@ func assign_passthrough_route(route: PackedVector2Array) -> void:
 		state = AgentState.WALKING_PASSTHROUGH if fulfilled_needs_count == 0 else AgentState.EXITING_HAPPY
 	elif state != AgentState.EXITING_FRUSTRATED:
 		state = AgentState.WALKING_UNFULFILLED
+	if not route.is_empty():
+		gate_wait_timer = 0.0
+		gate_retry_timer = 0.0
 	_trim_initial_waypoint()
 
 func trigger_lost_state(wander_route: PackedVector2Array) -> void:
@@ -313,6 +417,105 @@ func _process(delta: float) -> void:
 			visual_model.rotation_degrees.z = 0.0
 		return
 
+	if stumble_timer > 0.0:
+		stumble_timer -= sim_delta
+		if visual_model:
+			visual_model.rotation_degrees.z = sin(stumble_timer * 18.0) * 8.0
+		return
+
+	if is_captivated_by_busker:
+		captivated_timer -= sim_delta
+		if captivated_timer <= 0.0:
+			is_captivated_by_busker = false
+			if status_label and status_label.text == "🎵":
+				status_label.visible = false
+		return
+
+	if is_startled_timer > 0.0:
+		is_startled_timer -= sim_delta
+		if is_startled_timer <= 0.0 and status_label and status_label.text == "😱":
+			status_label.visible = false
+		return
+
+	# Archetype specific action loops
+	if archetype == Archetype.BUSKER and state != AgentState.EXITING_FRUSTRATED:
+		if not is_performing_busker:
+			busker_delay_timer -= sim_delta
+			if busker_delay_timer <= 0.0:
+				is_performing_busker = true
+				busker_perform_timer = 12.0
+				status_label.text = "🎵🎸"
+				status_label.font_size = 28
+				status_label.modulate = Color(1.0, 0.85, 0.35)
+				status_label.visible = true
+		else:
+			busker_perform_timer -= sim_delta
+			_halt_nearby_passersby_for_busker(4)
+			if visual_model:
+				visual_model.rotation_degrees.y += sim_delta * 45.0
+			if busker_perform_timer <= 0.0:
+				is_performing_busker = false
+				status_label.visible = false
+				busker_delay_timer = 99999.0
+			return
+
+	if archetype == Archetype.INFLUENCER and state != AgentState.EXITING_FRUSTRATED:
+		if not is_filming_influencer:
+			influencer_delay_timer -= sim_delta
+			if influencer_delay_timer <= 0.0:
+				is_filming_influencer = true
+				influencer_film_timer = 6.0
+				status_label.text = "🤳 Live!"
+				status_label.font_size = 24
+				status_label.modulate = Color(0.95, 0.45, 0.75)
+				status_label.visible = true
+		else:
+			influencer_film_timer -= sim_delta
+			if influencer_film_timer <= 0.0:
+				is_filming_influencer = false
+				status_label.visible = false
+				influencer_delay_timer = 99999.0
+			return
+
+	if archetype == Archetype.PIGEON_FEEDER and state != AgentState.EXITING_FRUSTRATED:
+		if not is_feeding_pigeons:
+			pigeon_delay_timer -= sim_delta
+			if pigeon_delay_timer <= 0.0:
+				is_feeding_pigeons = true
+				pigeon_scatter_timer = 10.0
+				status_label.text = "🍞🕊️"
+				status_label.font_size = 26
+				status_label.modulate = Color(0.65, 0.90, 0.70)
+				status_label.visible = true
+				pigeon_slow_zone_created.emit(get_current_grid_coords(), 10.0)
+		else:
+			pigeon_scatter_timer -= sim_delta
+			if pigeon_scatter_timer <= 0.0:
+				is_feeding_pigeons = false
+				status_label.visible = false
+				pigeon_delay_timer = 99999.0
+			return
+
+	# Disruptive ambient effects during movement
+	if archetype == Archetype.PHONE_ZOMBIE:
+		phone_zombie_trash_timer -= sim_delta
+		if phone_zombie_trash_timer <= 0.0:
+			phone_zombie_trash_timer = randf_range(12.0, 24.0)
+			wants_to_dispose_trash.emit(self, get_current_grid_coords())
+		_bump_commuters_on_tile()
+	elif archetype == Archetype.DOG_WALKER:
+		dog_mess_timer -= sim_delta
+		if dog_mess_timer <= 0.0:
+			dog_mess_timer = randf_range(16.0, 30.0)
+			wants_to_dispose_trash.emit(self, get_current_grid_coords())
+		_trip_nearby_commuters()
+	elif archetype == Archetype.SKATER:
+		_startle_nearby_elders()
+	elif archetype == Archetype.PICKPOCKET:
+		_try_pickpocket_nearby(sim_delta)
+	elif archetype == Archetype.INSPECTOR:
+		_audit_current_location(sim_delta)
+
 	# Litter drop countdown after using Dining/Picnic facility
 	if has_pending_trash:
 		trash_timer -= sim_delta
@@ -339,6 +542,22 @@ func _process(delta: float) -> void:
 			return
 
 	if current_route.is_empty() or target_index >= current_route.size():
+		var cur_pos := get_current_grid_coords()
+		if cur_pos == spawn_coords and state != AgentState.EXITING_FRUSTRATED and state != AgentState.QUEUING:
+			gate_wait_timer += sim_delta
+			gate_retry_timer += sim_delta
+			if not status_label.visible or status_label.text != "⏳":
+				status_label.text = "⏳"
+				status_label.font_size = 24
+				status_label.modulate = Color(1.0, 0.85, 0.4)
+				status_label.visible = true
+				head_popup_timer = 2.0
+			if gate_retry_timer >= 1.5:
+				gate_retry_timer = 0.0
+				need_routing_refresh.emit(self)
+			if gate_wait_timer >= 10.0:
+				gate_wait_timer = 0.0
+				_become_unhappy_and_walk_freely("No Path!")
 		return
 
 	var cur_cell := get_current_grid_coords()
@@ -423,11 +642,17 @@ func _on_reached_route_end() -> void:
 			has_emitted_unfulfilled = true
 			exited_unfulfilled.emit(self)
 		queue_free()
-	elif state == AgentState.WALKING_PASSTHROUGH:
+	elif state == AgentState.WALKING_PASSTHROUGH or state == AgentState.EXITING_HAPPY:
 		exited_happy_passthrough.emit(self)
 		queue_free()
-	elif state == AgentState.EXITING_HAPPY or state == AgentState.EXITING_FRUSTRATED:
+	elif state == AgentState.EXITING_FRUSTRATED:
+		if not has_emitted_unfulfilled:
+			has_emitted_unfulfilled = true
+			exited_unfulfilled.emit(self)
 		queue_free()
+
+func is_100_percent_happy() -> bool:
+	return (state == AgentState.EXITING_HAPPY or state == AgentState.WALKING_PASSTHROUGH) and not has_emitted_unfulfilled
 
 func on_facility_served(served_facility_type: int = 1) -> void:
 	is_waiting_in_queue = false
@@ -482,3 +707,116 @@ func on_facility_removed() -> void:
 	destination_stall = null
 	state = AgentState.WALKING_UNFULFILLED if has_active_need() else AgentState.EXITING_HAPPY
 	need_routing_refresh.emit(self)
+
+func trigger_stumble(duration: float, complaint_text: String = "💫 Stumbled!") -> void:
+	stumble_timer = duration
+	show_unhappy_complaint(-1, complaint_text)
+
+func trigger_startled(duration: float) -> void:
+	is_startled_timer = duration
+	if status_label:
+		status_label.text = "😱"
+		status_label.font_size = 26
+		status_label.modulate = Color(1.0, 0.35, 0.35)
+		status_label.visible = true
+		head_popup_timer = duration
+
+func on_influencer_bumped() -> void:
+	if is_filming_influencer:
+		is_filming_influencer = false
+		influencer_film_timer = 0.0
+		show_unhappy_complaint(-1, "😡 Bumped! (-5)")
+		var root_director := get_tree().root.find_child("Main", true, false)
+		if root_director and root_director.has_method("penalize_happiness"):
+			root_director.penalize_happiness(5.0)
+
+func _halt_nearby_passersby_for_busker(max_passersby: int) -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+	var count := 0
+	for sibling in parent.get_children():
+		if sibling is PeepAgent and sibling != self:
+			var other := sibling as PeepAgent
+			if other.archetype != Archetype.BUSKER and not other.is_captivated_by_busker and other.state != AgentState.QUEUING:
+				if global_position.distance_to(other.global_position) <= 1.6:
+					other.is_captivated_by_busker = true
+					other.captivated_timer = 3.5
+					if other.status_label:
+						other.status_label.text = "🎵"
+						other.status_label.font_size = 24
+						other.status_label.modulate = Color(1.0, 0.90, 0.45)
+						other.status_label.visible = true
+					count += 1
+					if count >= max_passersby:
+						break
+
+func _bump_commuters_on_tile() -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+	for sibling in parent.get_children():
+		if sibling is PeepAgent and sibling != self:
+			var other := sibling as PeepAgent
+			if other.archetype != Archetype.PHONE_ZOMBIE and other.stumble_timer <= 0.0 and other.state != AgentState.QUEUING:
+				if global_position.distance_to(other.global_position) <= 0.60:
+					other.trigger_stumble(1.5, "💫 Stumbled!")
+					if other.archetype == Archetype.INFLUENCER and other.is_filming_influencer:
+						other.on_influencer_bumped()
+
+func _trip_nearby_commuters() -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+	var dog_pos := global_position + Vector3(0.24, 0, -0.42)
+	for sibling in parent.get_children():
+		if sibling is PeepAgent and sibling != self:
+			var other := sibling as PeepAgent
+			if other.archetype != Archetype.DOG_WALKER and other.stumble_timer <= 0.0 and other.state != AgentState.QUEUING:
+				if dog_pos.distance_to(other.global_position) <= 0.50:
+					other.trigger_stumble(1.0, "⚠️ Tripped!")
+
+func _startle_nearby_elders() -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+	for sibling in parent.get_children():
+		if sibling is PeepAgent and sibling != self:
+			var other := sibling as PeepAgent
+			if other.archetype == Archetype.ELDER and other.is_startled_timer <= 0.0 and other.state != AgentState.QUEUING:
+				if global_position.distance_to(other.global_position) <= 1.8:
+					other.trigger_startled(1.2)
+
+func _try_pickpocket_nearby(sim_delta: float) -> void:
+	if is_fleeing_pickpocket:
+		return
+	pickpocket_cooldown -= sim_delta
+	if pickpocket_cooldown > 0.0:
+		return
+	var parent := get_parent()
+	if not parent:
+		return
+	for sibling in parent.get_children():
+		if sibling is PeepAgent and sibling != self:
+			var other := sibling as PeepAgent
+			if other.archetype != Archetype.PICKPOCKET and other.state != AgentState.QUEUING:
+				if global_position.distance_to(other.global_position) <= 0.8:
+					pickpocket_cooldown = 99999.0
+					is_fleeing_pickpocket = true
+					walk_speed = 4.2
+					other.show_unhappy_complaint(-1, "Robbed! 💸")
+					security_alert_pickpocket.emit(self)
+					break
+
+func _audit_current_location(sim_delta: float) -> void:
+	inspector_audit_timer -= sim_delta
+	if inspector_audit_timer > 0.0:
+		return
+	inspector_audit_timer = 1.2
+	var c := get_current_grid_coords()
+	if inspector_audited_cells.has(c):
+		return
+	inspector_audited_cells[c] = true
+	if path_net_ref and path_net_ref.get_tile_trash_count(c) > 0:
+		show_unhappy_complaint(-1, "📋❌ Dirty!")
+		inspector_audit_infraction.emit("Dirty Tile Found!", 1.0)

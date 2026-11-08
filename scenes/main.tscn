@@ -114,7 +114,7 @@ text = ""
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.96, 0.65, 1)
 theme_override_font_sizes/font_size = 19
-text = "💰 $200k"
+text = "💰 200k 🪙"
 
 [node name="TopSpacer" type="Control" parent="HUD/TopBar"]
 layout_mode = 2

@@ -13,7 +13,7 @@ static func get_locations() -> Array[Dictionary]:
 	var list: Array[Dictionary] = []
 
 	# ------------------------------------------------------------------
-	# 1. Old Town Square — Small/Compact Plaza (19x13 tiles, $200k budget)
+	# 1. Old Town Square — Small/Compact Plaza (19x13 tiles, 200k 🪙 budget)
 	# ------------------------------------------------------------------
 	var old_obs: Dictionary = {}
 	old_obs[Vector2i(0, -3)] = "fountain"
@@ -35,7 +35,7 @@ static func get_locations() -> Array[Dictionary]:
 		"short_desc": "Cozy cobblestone square with a central fountain.",
 		"accent_color": Color("d96b4f"),
 		"description": "A cozy cobblestone square tucked between two quiet streets. Townsfolk stroll through day and night.",
-		"rule": "Map: Small (19×13) | Starting Budget: $200k. Balanced visitor needs with a central fountain and planters.",
+		"rule": "Map: Small (19×13) | Starting Budget: 200k 🪙. Balanced visitor needs with a central fountain and planters.",
 		"spawn_interval": 9.0,
 		"need_weights": [1.0, 0.9, 1.0, 0.9],
 		"start_time": 0.05,
@@ -64,7 +64,7 @@ static func get_locations() -> Array[Dictionary]:
 	})
 
 	# ------------------------------------------------------------------
-	# 2. Riverside Park — Large Scenic Park (25x17 tiles, $230k budget)
+	# 2. Riverside Park — Large Scenic Park (25x17 tiles, 230k 🪙 budget)
 	# ------------------------------------------------------------------
 	var river_obs: Dictionary = {}
 	for z in range(-8, 9):
@@ -90,7 +90,7 @@ static func get_locations() -> Array[Dictionary]:
 		"short_desc": "Leafy park split by a stream & wooden bridge.",
 		"accent_color": Color("4f9e69"),
 		"description": "A spacious leafy park split by a gentle stream. Only the old wooden bridge connects both banks.",
-		"rule": "Map: Large (25×17) | Starting Budget: $230k. High Elder & Picnic/Bench demand; river cannot be built on.",
+		"rule": "Map: Large (25×17) | Starting Budget: 230k 🪙. High Elder & Picnic/Bench demand; river cannot be built on.",
 		"spawn_interval": 8.5,
 		"need_weights": [0.9, 1.0, 0.8, 1.5],
 		"start_time": 0.05,
@@ -121,7 +121,7 @@ static func get_locations() -> Array[Dictionary]:
 	})
 
 	# ------------------------------------------------------------------
-	# 3. Night Market — Medium Market Lanes (23x13 tiles, $190k budget)
+	# 3. Night Market — Medium Market Lanes (23x13 tiles, 190k 🪙 budget)
 	# ------------------------------------------------------------------
 	var market_obs: Dictionary = {}
 	_row(-2, [-9, -8, -5, -4, -1, 1, 4, 5, 8, 9], "shop", market_obs)
@@ -140,7 +140,7 @@ static func get_locations() -> Array[Dictionary]:
 		"short_desc": "Evening market lanes under warm lanterns.",
 		"accent_color": Color("825fa8"),
 		"description": "Rows of closed market stalls form narrow alleys under strings of warm lanterns. Opens at dusk.",
-		"rule": "Map: Medium (23×13) | Starting Budget: $190k. High Food & Drink demand; market rows create bottlenecks.",
+		"rule": "Map: Medium (23×13) | Starting Budget: 190k 🪙. High Food & Drink demand; market rows create bottlenecks.",
 		"spawn_interval": 8.0,
 		"need_weights": [1.6, 1.4, 0.8, 0.7],
 		"start_time": 0.4,
@@ -170,7 +170,7 @@ static func get_locations() -> Array[Dictionary]:
 	})
 
 	# ------------------------------------------------------------------
-	# 4. Central Station — Grand Concourse (29x19 tiles, $240k budget)
+	# 4. Central Station — Grand Concourse (29x19 tiles, 240k 🪙 budget)
 	# ------------------------------------------------------------------
 	var station_obs: Dictionary = {}
 	station_obs[Vector2i(-6, -4)] = "fountain"
@@ -179,10 +179,6 @@ static func get_locations() -> Array[Dictionary]:
 	station_obs[Vector2i(-3, 4)] = "planter"
 	station_obs[Vector2i(3, 4)] = "planter"
 	station_obs[Vector2i(8, 4)] = "planter"
-
-	var station_extra_paths: Array = []
-	for sz in range(-9, 0):
-		station_extra_paths.append(Vector2i(0, sz))
 
 	list.append({
 		"id": "central_station",
@@ -197,12 +193,12 @@ static func get_locations() -> Array[Dictionary]:
 		"short_desc": "Busy transit concourse with regular train waves.",
 		"accent_color": Color("437ea8"),
 		"description": "A grand expansive concourse in front of the city's main train station. Trains arrive like clockwork.",
-		"rule": "Map: Grand (29×19) | Starting Budget: $240k. Train waves every 40s with hurried Business commuters.",
+		"rule": "Map: Grand (29×19) | Starting Budget: 240k 🪙. Train waves every 40s with hurried Business commuters.",
 		"spawn_interval": 8.0,
 		"need_weights": [1.0, 1.2, 1.5, 0.7],
 		"start_time": 0.05,
 		"obstacles": station_obs,
-		"extra_paths": station_extra_paths,
+		"extra_paths": [],
 		"bridges": [],
 		"station": {"coords": Vector2i(0, -9), "burst_interval": 40.0, "burst_size": 5},
 		"palette": {
